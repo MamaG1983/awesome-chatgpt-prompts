@@ -39,6 +39,60 @@ function extractVariables(text) {
   ); // Remove duplicates
 }
 
+// Global promise for loading prompts
+let promptsPromise = null;
+
+/**
+ * Normalizes a title for consistent matching between CSV and DOM.
+ * @param {string} title - The title to normalize.
+ * @returns {string} - The normalized title.
+ */
+function normalizeTitle(title) {
+  return title
+    .replace(/\s+/g, " ")
+    .replace(/[\n\r]/g, "")
+    .replace(/^Act as a?n?\s*/i, "")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Loads prompts from prompts.csv exactly once and returns them as an array and a Map.
+ * @returns {Promise<{prompts: Array, promptsMap: Map}>}
+ */
+function loadPrompts() {
+  if (promptsPromise) {
+    return promptsPromise;
+  }
+
+  promptsPromise = (async () => {
+    try {
+      const response = await fetch("/prompts.csv");
+      const csvText = await response.text();
+      const prompts = parseCSV(csvText);
+
+      // Sort prompts alphabetically by act
+      prompts.sort((a, b) => a.act.localeCompare(b.act));
+
+      // Create a Map for O(1) lookups
+      const promptsMap = new Map();
+      prompts.forEach((prompt) => {
+        const normalized = normalizeTitle(prompt.act);
+        // Store both the full prompt and a way to match it
+        promptsMap.set(normalized, prompt);
+      });
+
+      return { prompts, promptsMap };
+    } catch (error) {
+      console.error("Error loading prompts:", error);
+      promptsPromise = null; // Allow retry on failure
+      throw error;
+    }
+  })();
+
+  return promptsPromise;
+}
+
 function createVariableInputs(variables, container) {
   const form = document.createElement("div");
   form.className = "variable-form";
@@ -202,12 +256,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const { prompts } = await loadPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -421,10 +470,8 @@ function filterPrompts() {
   const searchTerm = searchInput.value.toLowerCase();
 
   // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  loadPrompts()
+    .then(({ prompts, promptsMap }) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -453,21 +500,7 @@ function filterPrompts() {
         );
         cards.forEach((card) => {
           const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
-            );
-          });
+          const matchingPrompt = promptsMap.get(normalizeTitle(title));
 
           // Show card if not in dev mode or if it's a dev prompt in dev mode
           card.style.display =
@@ -507,10 +540,8 @@ function createPromptCards() {
   promptsGrid.appendChild(contributeCard);
 
   // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  loadPrompts()
+    .then(({ prompts, promptsMap }) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(
@@ -523,21 +554,7 @@ function createPromptCards() {
         const content = blockquote.textContent.trim();
 
         // Find matching prompt in CSV
-        const matchingPrompt = prompts.find((p) => {
-          const csvTitle = p.act
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          const elementTitle = title
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          return (
-            csvTitle.toLowerCase() === elementTitle.toLowerCase() ||
-            csvTitle.toLowerCase().includes(elementTitle.toLowerCase()) ||
-            elementTitle.toLowerCase().includes(csvTitle.toLowerCase())
-          );
-        });
+        const matchingPrompt = promptsMap.get(normalizeTitle(title));
 
         // Extract contributor from the paragraph element
         const contributorParagraph = blockquote.previousElementSibling;

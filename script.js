@@ -123,6 +123,32 @@ function updatePromptPreview(promptText, form) {
   return previewText;
 }
 
+let cachedPromptsPromise = null;
+
+/**
+ * Fetches and parses the prompts.csv file.
+ * Caches the result to avoid redundant network requests and parsing.
+ * @returns {Promise<Array>} A promise that resolves to the array of prompts.
+ */
+function getPrompts() {
+  if (!cachedPromptsPromise) {
+    cachedPromptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => {
+        const prompts = parseCSV(csvText);
+        // Sort prompts alphabetically by act
+        prompts.sort((a, b) => a.act.localeCompare(b.act));
+        return prompts;
+      })
+      .catch((error) => {
+        console.error("Error loading prompts:", error);
+        cachedPromptsPromise = null; // Reset on error to allow retry
+        throw error;
+      });
+  }
+  return cachedPromptsPromise;
+}
+
 // Initialize everything after DOM loads
 document.addEventListener("DOMContentLoaded", () => {
   // Initialize audience selector and dev mode
@@ -202,12 +228,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const prompts = await getPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -421,62 +442,59 @@ function filterPrompts() {
   const searchTerm = searchInput.value.toLowerCase();
 
   // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
-        const matchesSearch =
-          !searchTerm ||
-          prompt.act.toLowerCase().includes(searchTerm) ||
-          prompt.prompt.toLowerCase().includes(searchTerm);
+  getPrompts().then((prompts) => {
+    const filteredPrompts = prompts.filter((prompt) => {
+      const matchesSearch =
+        !searchTerm ||
+        prompt.act.toLowerCase().includes(searchTerm) ||
+        prompt.prompt.toLowerCase().includes(searchTerm);
 
-        return isDevMode
-          ? matchesSearch && prompt.for_devs === true
-          : matchesSearch;
-      });
-
-      // Update count with filtered results
-      updatePromptCount(
-        filteredPrompts.length,
-        isDevMode
-          ? prompts.filter((p) => p.for_devs === true).length
-          : prompts.length
-      );
-      displaySearchResults(filteredPrompts);
-
-      // Update prompt cards visibility
-      const promptsGrid = document.querySelector(".prompts-grid");
-      if (promptsGrid) {
-        const cards = promptsGrid.querySelectorAll(
-          ".prompt-card:not(.contribute-card)"
-        );
-        cards.forEach((card) => {
-          const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
-            );
-          });
-
-          // Show card if not in dev mode or if it's a dev prompt in dev mode
-          card.style.display =
-            !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
-              ? ""
-              : "none";
-        });
-      }
+      return isDevMode
+        ? matchesSearch && prompt.for_devs === true
+        : matchesSearch;
     });
+
+    // Update count with filtered results
+    updatePromptCount(
+      filteredPrompts.length,
+      isDevMode
+        ? prompts.filter((p) => p.for_devs === true).length
+        : prompts.length
+    );
+    displaySearchResults(filteredPrompts);
+
+    // Update prompt cards visibility
+    const promptsGrid = document.querySelector(".prompts-grid");
+    if (promptsGrid) {
+      const cards = promptsGrid.querySelectorAll(
+        ".prompt-card:not(.contribute-card)"
+      );
+      cards.forEach((card) => {
+        const title = card.querySelector(".prompt-title").textContent.trim();
+        const matchingPrompt = prompts.find((p) => {
+          const pTitle = p.act
+            .replace(/\s+/g, " ")
+            .replace(/[\n\r]/g, "")
+            .trim();
+          const cardTitle = title
+            .replace(/\s+/g, " ")
+            .replace(/[\n\r]/g, "")
+            .trim();
+          return (
+            pTitle.toLowerCase() === cardTitle.toLowerCase() ||
+            pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
+            cardTitle.toLowerCase().includes(pTitle.toLowerCase())
+          );
+        });
+
+        // Show card if not in dev mode or if it's a dev prompt in dev mode
+        card.style.display =
+          !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
+            ? ""
+            : "none";
+      });
+    }
+  });
 }
 
 // Update the modal initialization and event listeners
@@ -507,13 +525,10 @@ function createPromptCards() {
   promptsGrid.appendChild(contributeCard);
 
   // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const isDevMode = document.getElementById("audienceSelect").value === "developers";
+  getPrompts().then((prompts) => {
+    const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
-      const promptElements = document.querySelectorAll(
+    const promptElements = document.querySelectorAll(
         "h2[id^=act] + p + blockquote"
       );
 

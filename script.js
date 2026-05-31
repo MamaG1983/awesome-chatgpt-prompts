@@ -1,3 +1,28 @@
+let cachedPromptsPromise = null;
+
+/**
+ * Fetches and parses prompts from prompts.csv, caching the result.
+ * @returns {Promise<Array>} A promise that resolves to an array of prompt objects.
+ */
+function getPrompts() {
+  if (!cachedPromptsPromise) {
+    cachedPromptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => {
+        const prompts = parseCSV(csvText);
+        // Sort prompts alphabetically by act
+        prompts.sort((a, b) => a.act.localeCompare(b.act));
+        return prompts;
+      })
+      .catch((error) => {
+        console.error("Error loading prompts:", error);
+        cachedPromptsPromise = null; // Reset cache on error to allow retry
+        throw error;
+      });
+  }
+  return cachedPromptsPromise;
+}
+
 // Dark mode functionality
 function toggleDarkMode() {
   const body = document.body;
@@ -14,6 +39,18 @@ function toggleDarkMode() {
 }
 
 // Add these new functions at the top
+/**
+ * Normalizes a title for comparison by removing extra whitespace and newlines,
+ * and converting to lowercase.
+ */
+function normalizeTitle(title) {
+  return title
+    .replace(/\s+/g, " ")
+    .replace(/[\n\r]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
 function extractVariables(text) {
   const variables = [];
   
@@ -202,12 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const prompts = await getPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -420,63 +452,64 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
-        const matchesSearch =
-          !searchTerm ||
-          prompt.act.toLowerCase().includes(searchTerm) ||
-          prompt.prompt.toLowerCase().includes(searchTerm);
+  // BOLT OPTIMIZATION: Use getPrompts() to avoid redundant fetches
+  getPrompts().then((prompts) => {
+    const filteredPrompts = prompts.filter((prompt) => {
+      const matchesSearch =
+        !searchTerm ||
+        prompt.act.toLowerCase().includes(searchTerm) ||
+        prompt.prompt.toLowerCase().includes(searchTerm);
 
-        return isDevMode
-          ? matchesSearch && prompt.for_devs === true
-          : matchesSearch;
+      return isDevMode
+        ? matchesSearch && prompt.for_devs === true
+        : matchesSearch;
+    });
+
+    // Update count with filtered results
+    updatePromptCount(
+      filteredPrompts.length,
+      isDevMode
+        ? prompts.filter((p) => p.for_devs === true).length
+        : prompts.length
+    );
+    displaySearchResults(filteredPrompts);
+
+    // Update prompt cards visibility
+    const promptsGrid = document.querySelector(".prompts-grid");
+    if (promptsGrid) {
+      const cards = promptsGrid.querySelectorAll(
+        ".prompt-card:not(.contribute-card)"
+      );
+
+      // BOLT OPTIMIZATION: Create a map for O(1) lookup during filtering
+      const promptsMap = new Map();
+      prompts.forEach((p) => {
+        promptsMap.set(normalizeTitle(p.act), p);
       });
 
-      // Update count with filtered results
-      updatePromptCount(
-        filteredPrompts.length,
-        isDevMode
-          ? prompts.filter((p) => p.for_devs === true).length
-          : prompts.length
-      );
-      displaySearchResults(filteredPrompts);
+      cards.forEach((card) => {
+        const title = card.querySelector(".prompt-title").textContent.trim();
+        const normalizedTitle = normalizeTitle(title);
 
-      // Update prompt cards visibility
-      const promptsGrid = document.querySelector(".prompts-grid");
-      if (promptsGrid) {
-        const cards = promptsGrid.querySelectorAll(
-          ".prompt-card:not(.contribute-card)"
-        );
-        cards.forEach((card) => {
-          const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
-            );
+        // Fast lookup with Map
+        let matchingPrompt = promptsMap.get(normalizedTitle);
+
+        // Fallback for partial matches if not found exactly (O(N) in worst case but only for missing entries)
+        if (!matchingPrompt) {
+          matchingPrompt = prompts.find((p) => {
+            const pTitle = normalizeTitle(p.act);
+            return pTitle.includes(normalizedTitle) || normalizedTitle.includes(pTitle);
           });
+        }
 
-          // Show card if not in dev mode or if it's a dev prompt in dev mode
-          card.style.display =
-            !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
-              ? ""
-              : "none";
-        });
-      }
-    });
+        // Show card if not in dev mode or if it's a dev prompt in dev mode
+        card.style.display =
+          !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
+            ? ""
+            : "none";
+      });
+    }
+  });
 }
 
 // Update the modal initialization and event listeners
@@ -506,38 +539,37 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // BOLT OPTIMIZATION: Use getPrompts() and Map for efficient lookup
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(
         "h2[id^=act] + p + blockquote"
       );
 
+      // Create a map for faster lookup: normalized title -> prompt
+      const promptsMap = new Map();
+      prompts.forEach((p) => {
+        promptsMap.set(normalizeTitle(p.act), p);
+      });
+
       promptElements.forEach((blockquote) => {
         const title =
           blockquote.previousElementSibling.previousElementSibling.textContent.trim();
         const content = blockquote.textContent.trim();
+        const normalizedTitle = normalizeTitle(title);
 
-        // Find matching prompt in CSV
-        const matchingPrompt = prompts.find((p) => {
-          const csvTitle = p.act
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          const elementTitle = title
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          return (
-            csvTitle.toLowerCase() === elementTitle.toLowerCase() ||
-            csvTitle.toLowerCase().includes(elementTitle.toLowerCase()) ||
-            elementTitle.toLowerCase().includes(csvTitle.toLowerCase())
-          );
-        });
+        // Find matching prompt in Map (O(1))
+        let matchingPrompt = promptsMap.get(normalizedTitle);
+
+        // Fallback for partial matches if not found exactly (O(N) in worst case but rare)
+        if (!matchingPrompt) {
+          matchingPrompt = prompts.find((p) => {
+            const pTitle = normalizeTitle(p.act);
+            return pTitle.includes(normalizedTitle) || normalizedTitle.includes(pTitle);
+          });
+        }
 
         // Extract contributor from the paragraph element
         const contributorParagraph = blockquote.previousElementSibling;

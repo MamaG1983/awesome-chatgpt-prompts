@@ -2,3 +2,7 @@
 .vscode/
 .DS_Store
 _site/
+vendor/
+.jules/
+test_verify.html
+server.log

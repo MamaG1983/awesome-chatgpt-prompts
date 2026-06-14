@@ -25,10 +25,16 @@ function parseCSV(csv) {
 }
 
 // Load prompts from CSV
-async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+let promptsPromise = null;
+
+// Load prompts from CSV
+function loadPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch('/vibeprompts.csv')
+      .then(response => response.text())
+      .then(text => parseCSV(text));
+  }
+  return promptsPromise;
 }
 
 // Update prompt count

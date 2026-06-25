@@ -1,0 +1,3 @@
+## 2024-06-25 - Redundant Data Fetches and Parsing
+**Learning:** The application was fetching and parsing `prompts.csv` (113KB) and `vibeprompts.csv` (29KB) multiple times per session—specifically on every search keystroke in `/vibe` and on every audience filter change in the root. This was due to several independent functions (`initializeSearch`, `filterPrompts`, `createPromptCards`) each performing its own `fetch` and `parseCSV` calls.
+**Action:** Implemented a singleton promise pattern for data loading. By caching the fetch/parse promise rather than the result, we ensure concurrent requests are unified and subsequent requests return the already-parsed data instantly.

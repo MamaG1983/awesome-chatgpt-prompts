@@ -199,12 +199,32 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+let promptsPromise = null;
+
+async function getPrompts() {
+  if (promptsPromise) return promptsPromise;
+
+  promptsPromise = (async () => {
+    try {
+      const response = await fetch("/prompts.csv");
+      const csvText = await response.text();
+      const prompts = parseCSV(csvText);
+      // Sort prompts alphabetically by act
+      prompts.sort((a, b) => a.act.localeCompare(b.act));
+      return prompts;
+    } catch (error) {
+      promptsPromise = null; // Reset on failure to allow retry
+      throw error;
+    }
+  })();
+
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
+    const prompts = await getPrompts();
 
     // Sort prompts alphabetically by act
     prompts.sort((a, b) => a.act.localeCompare(b.act));
@@ -421,10 +441,8 @@ function filterPrompts() {
   const searchTerm = searchInput.value.toLowerCase();
 
   // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  getPrompts()
+    .then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -482,6 +500,7 @@ function filterPrompts() {
 // Update the modal initialization and event listeners
 function createPromptCards() {
   const container = document.querySelector(".container-lg.markdown-body");
+  if (!container) return;
   const promptsGrid = document.createElement("div");
   promptsGrid.className = "prompts-grid";
 
@@ -507,10 +526,8 @@ function createPromptCards() {
   promptsGrid.appendChild(contributeCard);
 
   // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

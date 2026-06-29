@@ -1,0 +1,3 @@
+## 2026-06-29 - Redundant Fetching of Static Data in Search/Filter UI
+**Learning:** In this Jekyll-based architecture where prompts are served via CSV files, the search and filter logic was re-fetching and re-parsing the entire `prompts.csv` on every keystroke and UI interaction. This created a measurable performance lag and unnecessary network overhead as the dataset grew.
+**Action:** Implement a singleton promise pattern for data loading. This ensures that the network request and expensive parsing/sorting operations happen exactly once, while subsequent UI updates benefit from an immediate, cached result.

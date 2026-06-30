@@ -1,3 +1,6 @@
+// Singleton promise for fetching and parsing prompts
+let promptsPromise = null;
+
 function parseCSV(csv) {
   const lines = csv.split("\n");
   const headers = lines[0]
@@ -26,9 +29,19 @@ function parseCSV(csv) {
 
 // Load prompts from CSV
 async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+  if (!promptsPromise) {
+    promptsPromise = fetch('/vibeprompts.csv')
+      .then(response => {
+        if (!response.ok) throw new Error("Network response was not ok");
+        return response.text();
+      })
+      .then(text => parseCSV(text))
+      .catch(error => {
+        promptsPromise = null; // Reset for retry
+        throw error;
+      });
+  }
+  return promptsPromise;
 }
 
 // Update prompt count

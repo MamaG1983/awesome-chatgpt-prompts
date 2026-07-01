@@ -199,15 +199,38 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+let promptsPromise = null;
+
+/**
+ * Fetches and parses the prompts.csv file, caching the result in a singleton promise.
+ * This prevents redundant network requests and re-parsing of the CSV data.
+ * @returns {Promise<Array>} A promise that resolves to the sorted array of prompts.
+ */
+function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch("/prompts.csv")
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to fetch prompts.csv");
+        return response.text();
+      })
+      .then((csvText) => {
+        const prompts = parseCSV(csvText);
+        // Sort prompts alphabetically by act
+        prompts.sort((a, b) => a.act.localeCompare(b.act));
+        return prompts;
+      })
+      .catch((error) => {
+        promptsPromise = null; // Allow retry on failure
+        throw error;
+      });
+  }
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const prompts = await getPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -420,11 +443,8 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Use cached prompts
+  getPrompts().then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -506,11 +526,8 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Use cached prompts to get for_devs information
+  getPrompts().then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

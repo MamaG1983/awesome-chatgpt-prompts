@@ -24,11 +24,29 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
-// Load prompts from CSV
-async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+let promptsPromise = null;
+
+/**
+ * Fetches and parses the vibeprompts.csv file, caching the result in a singleton promise.
+ * This prevents redundant network requests and re-parsing of the CSV data.
+ * @returns {Promise<Array>} A promise that resolves to the array of prompts.
+ */
+function loadPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch('/vibeprompts.csv')
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to fetch vibeprompts.csv");
+        return response.text();
+      })
+      .then((csvText) => {
+        return parseCSV(csvText);
+      })
+      .catch((error) => {
+        promptsPromise = null; // Allow retry on failure
+        throw error;
+      });
+  }
+  return promptsPromise;
 }
 
 // Update prompt count

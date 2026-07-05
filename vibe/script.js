@@ -25,10 +25,32 @@ function parseCSV(csv) {
 }
 
 // Load prompts from CSV
+// Use a singleton promise to ensure the CSV is only fetched and parsed once.
+// This significantly improves performance during search by avoiding redundant network requests
+// and expensive CSV parsing on every keystroke.
+let cachedPromptsPromise = null;
 async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+  if (cachedPromptsPromise) {
+    return cachedPromptsPromise;
+  }
+
+  cachedPromptsPromise = (async () => {
+    try {
+      const response = await fetch('/vibeprompts.csv');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch vibeprompts.csv: ${response.status} ${response.statusText}`);
+      }
+      const text = await response.text();
+      return parseCSV(text);
+    } catch (error) {
+      // Reset promise on failure to allow for retries in subsequent calls
+      cachedPromptsPromise = null;
+      console.error("Error loading prompts:", error);
+      throw error;
+    }
+  })();
+
+  return cachedPromptsPromise;
 }
 
 // Update prompt count

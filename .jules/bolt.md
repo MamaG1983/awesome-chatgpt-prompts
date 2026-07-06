@@ -1,0 +1,3 @@
+## 2025-02-18 - Optimized CSV fetching and parsing with singleton promise caching
+**Learning:** Found a performance bottleneck where large CSV files (`prompts.csv` and `vibeprompts.csv`) were being fetched and parsed multiple times during initial page load and on every search interaction. This led to redundant network traffic and wasted CPU cycles on parsing.
+**Action:** Implemented a singleton promise pattern for data fetching. By caching the promise itself, multiple simultaneous or sequential requests resolve to the same data without redundant fetches. Also moved the alphabetical sorting logic into the cached promise in `script.js` to ensure it only runs once.

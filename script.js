@@ -199,15 +199,33 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Get prompts with caching
+let promptsPromise = null;
+function getPrompts() {
+  if (promptsPromise) return promptsPromise;
+
+  promptsPromise = (async () => {
+    try {
+      const response = await fetch("/prompts.csv");
+      const csvText = await response.text();
+      const prompts = parseCSV(csvText);
+
+      // Sort prompts alphabetically by act once
+      prompts.sort((a, b) => a.act.localeCompare(b.act));
+      return prompts;
+    } catch (error) {
+      promptsPromise = null;
+      throw error;
+    }
+  })();
+
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const prompts = await getPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -415,18 +433,16 @@ function displaySearchResults(results) {
 }
 
 // Function to filter prompts based on dev mode
-function filterPrompts() {
+async function filterPrompts() {
   const isDevMode = document.getElementById("audienceSelect").value === "developers";
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
-        const matchesSearch =
+  // Get prompts from cache and filter
+  try {
+    const prompts = await getPrompts();
+    const filteredPrompts = prompts.filter((prompt) => {
+      const matchesSearch =
           !searchTerm ||
           prompt.act.toLowerCase().includes(searchTerm) ||
           prompt.prompt.toLowerCase().includes(searchTerm);
@@ -476,11 +492,13 @@ function filterPrompts() {
               : "none";
         });
       }
-    });
+    } catch (error) {
+      console.error("Error filtering prompts:", error);
+    }
 }
 
 // Update the modal initialization and event listeners
-function createPromptCards() {
+async function createPromptCards() {
   const container = document.querySelector(".container-lg.markdown-body");
   const promptsGrid = document.createElement("div");
   promptsGrid.className = "prompts-grid";
@@ -506,161 +524,160 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const isDevMode = document.getElementById("audienceSelect").value === "developers";
+  // Get prompts from cache to get for_devs information
+  try {
+    const prompts = await getPrompts();
+    const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
-      const promptElements = document.querySelectorAll(
-        "h2[id^=act] + p + blockquote"
-      );
+    const promptElements = document.querySelectorAll(
+      "h2[id^=act] + p + blockquote"
+    );
 
-      promptElements.forEach((blockquote) => {
-        const title =
-          blockquote.previousElementSibling.previousElementSibling.textContent.trim();
-        const content = blockquote.textContent.trim();
+    promptElements.forEach((blockquote) => {
+      const title =
+        blockquote.previousElementSibling.previousElementSibling.textContent.trim();
+      const content = blockquote.textContent.trim();
 
-        // Find matching prompt in CSV
-        const matchingPrompt = prompts.find((p) => {
-          const csvTitle = p.act
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          const elementTitle = title
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          return (
-            csvTitle.toLowerCase() === elementTitle.toLowerCase() ||
-            csvTitle.toLowerCase().includes(elementTitle.toLowerCase()) ||
-            elementTitle.toLowerCase().includes(csvTitle.toLowerCase())
-          );
-        });
-
-        // Extract contributor from the paragraph element
-        const contributorParagraph = blockquote.previousElementSibling;
-        const contributorText = contributorParagraph.textContent;
-        let contributor = null;
-
-        // Try different contributor formats
-        const formats = [
-          /Contributed by: \[([^\]]+)\]/i,
-          /Contributed by \[([^\]]+)\]/i,
-          /Contributed by: @([^\s]+)/i,
-          /Contributed by @([^\s]+)/i,
-          /Contributed by: \[@([^\]]+)\]/i,
-          /Contributed by \[@([^\]]+)\]/i,
-        ];
-
-        for (const format of formats) {
-          const match = contributorText.match(format);
-          if (match) {
-            contributor = match[1];
-            // Remove @ if it exists at the start
-            contributor = contributor.replace(/^@/, "");
-            break;
-          }
-        }
-
-        // Set default contributor to 'f' if none found
-        if (!contributor) {
-          contributor = "f";
-        }
-
-        const card = document.createElement("div");
-        card.className = "prompt-card";
-
-        // Set initial visibility based on dev mode
-        if (isDevMode && (!matchingPrompt || !matchingPrompt.for_devs)) {
-          card.style.display = "none";
-        }
-
-        card.innerHTML = `
-        <div class="prompt-title">
-            ${title}
-            <div class="action-buttons">
-            <button class="chat-button" title="Open in AI Chat" onclick="openInChat(this, '${encodeURIComponent(
-              updatePromptPreview(content.trim())
-            )}')">
-                <svg class="chat-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                </svg>
-                <svg class="terminal-icon" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="4 17 10 11 4 5"></polyline>
-                <line x1="12" y1="19" x2="20" y2="19"></line>
-                </svg>
-            </button>
-            <button class="yaml-button" title="Show prompt.yml format" onclick="showYamlModal(event, '${encodeURIComponent(title)}', '${encodeURIComponent(content)}')">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
-            </button>
-            <button class="copy-button" title="Copy prompt" onclick="copyPrompt(this, '${encodeURIComponent(
-              updatePromptPreview(content.trim())
-            )}')">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
-                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
-                </svg>
-            </button>
-            </div>
-        </div>
-        <p class="prompt-content">${updatePromptPreview(content)}</p>
-        <a href="https://github.com/${contributor}" class="contributor-badge" target="_blank" rel="noopener">@${contributor}</a>
-        `;
-
-        // Add click event for showing modal
-        card.addEventListener("click", (e) => {
-          if (
-            !e.target.closest(".copy-button") &&
-            !e.target.closest(".contributor-badge") &&
-            !e.target.closest(".yaml-button")
-          ) {
-            showModal(title, content);
-          }
-        });
-
-        const copyButton = card.querySelector(".copy-button");
-        copyButton.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          try {
-            await navigator.clipboard.writeText(updatePromptPreview(content));
-            copyButton.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-            `;
-            setTimeout(() => {
-              copyButton.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-            `;
-            }, 2000);
-          } catch (err) {
-            alert("Failed to copy prompt to clipboard");
-          }
-        });
-
-        promptsGrid.appendChild(card);
+      // Find matching prompt in CSV
+      const matchingPrompt = prompts.find((p) => {
+        const csvTitle = p.act
+          .replace(/\s+/g, " ")
+          .replace(/[\n\r]/g, "")
+          .trim();
+        const elementTitle = title
+          .replace(/\s+/g, " ")
+          .replace(/[\n\r]/g, "")
+          .trim();
+        return (
+          csvTitle.toLowerCase() === elementTitle.toLowerCase() ||
+          csvTitle.toLowerCase().includes(elementTitle.toLowerCase()) ||
+          elementTitle.toLowerCase().includes(csvTitle.toLowerCase())
+        );
       });
 
-      container.innerHTML = "";
-      container.appendChild(promptsGrid);
+      // Extract contributor from the paragraph element
+      const contributorParagraph = blockquote.previousElementSibling;
+      const contributorText = contributorParagraph.textContent;
+      let contributor = null;
 
-      // Initialize modal event listeners
-      initializeModalListeners();
-    })
-    .catch((error) => {
-      console.error("Error loading prompts:", error);
+      // Try different contributor formats
+      const formats = [
+        /Contributed by: \[([^\]]+)\]/i,
+        /Contributed by \[([^\]]+)\]/i,
+        /Contributed by: @([^\s]+)/i,
+        /Contributed by @([^\s]+)/i,
+        /Contributed by: \[@([^\]]+)\]/i,
+        /Contributed by \[@([^\]]+)\]/i,
+      ];
+
+      for (const format of formats) {
+        const match = contributorText.match(format);
+        if (match) {
+          contributor = match[1];
+          // Remove @ if it exists at the start
+          contributor = contributor.replace(/^@/, "");
+          break;
+        }
+      }
+
+      // Set default contributor to 'f' if none found
+      if (!contributor) {
+        contributor = "f";
+      }
+
+      const card = document.createElement("div");
+      card.className = "prompt-card";
+
+      // Set initial visibility based on dev mode
+      if (isDevMode && (!matchingPrompt || !matchingPrompt.for_devs)) {
+        card.style.display = "none";
+      }
+
+      card.innerHTML = `
+      <div class="prompt-title">
+          ${title}
+          <div class="action-buttons">
+          <button class="chat-button" title="Open in AI Chat" onclick="openInChat(this, '${encodeURIComponent(
+            updatePromptPreview(content.trim())
+          )}')">
+              <svg class="chat-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <svg class="terminal-icon" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+              </svg>
+          </button>
+          <button class="yaml-button" title="Show prompt.yml format" onclick="showYamlModal(event, '${encodeURIComponent(
+            title
+          )}', '${encodeURIComponent(content)}')">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+          </button>
+          <button class="copy-button" title="Copy prompt" onclick="copyPrompt(this, '${encodeURIComponent(
+            updatePromptPreview(content.trim())
+          )}')">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+              </svg>
+          </button>
+          </div>
+      </div>
+      <p class="prompt-content">${updatePromptPreview(content)}</p>
+      <a href="https://github.com/${contributor}" class="contributor-badge" target="_blank" rel="noopener">@${contributor}</a>
+      `;
+
+      // Add click event for showing modal
+      card.addEventListener("click", (e) => {
+        if (
+          !e.target.closest(".copy-button") &&
+          !e.target.closest(".contributor-badge") &&
+          !e.target.closest(".yaml-button")
+        ) {
+          showModal(title, content);
+        }
+      });
+
+      const copyButton = card.querySelector(".copy-button");
+      copyButton.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(updatePromptPreview(content));
+          copyButton.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          `;
+          setTimeout(() => {
+            copyButton.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+          `;
+          }, 2000);
+        } catch (err) {
+          alert("Failed to copy prompt to clipboard");
+        }
+      });
+
+      promptsGrid.appendChild(card);
     });
+
+    container.innerHTML = "";
+    container.appendChild(promptsGrid);
+
+    // Initialize modal event listeners
+    initializeModalListeners();
+  } catch (error) {
+    console.error("Error loading prompts:", error);
+  }
 }
 
 function initializeModalListeners() {

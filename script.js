@@ -202,12 +202,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const prompts = await getPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -266,6 +261,27 @@ function updatePromptCount(filteredCount, totalCount) {
     countLabel.textContent = `Found ${filteredCount} of ${totalCount}`;
     countNumber.textContent = filteredCount;
   }
+}
+
+let promptsPromise = null;
+async function getPrompts() {
+  if (promptsPromise) return promptsPromise;
+
+  promptsPromise = (async () => {
+    try {
+      const response = await fetch("/prompts.csv");
+      const csvText = await response.text();
+      const prompts = parseCSV(csvText);
+      // Sort prompts alphabetically by act
+      prompts.sort((a, b) => a.act.localeCompare(b.act));
+      return prompts;
+    } catch (error) {
+      promptsPromise = null;
+      throw error;
+    }
+  })();
+
+  return promptsPromise;
 }
 
 function parseCSV(csv) {
@@ -415,17 +431,15 @@ function displaySearchResults(results) {
 }
 
 // Function to filter prompts based on dev mode
-function filterPrompts() {
+async function filterPrompts() {
   const isDevMode = document.getElementById("audienceSelect").value === "developers";
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
   // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
+  try {
+    const prompts = await getPrompts();
+    const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
           prompt.act.toLowerCase().includes(searchTerm) ||
@@ -443,44 +457,27 @@ function filterPrompts() {
           ? prompts.filter((p) => p.for_devs === true).length
           : prompts.length
       );
-      displaySearchResults(filteredPrompts);
+    displaySearchResults(filteredPrompts);
 
-      // Update prompt cards visibility
-      const promptsGrid = document.querySelector(".prompts-grid");
-      if (promptsGrid) {
-        const cards = promptsGrid.querySelectorAll(
-          ".prompt-card:not(.contribute-card)"
-        );
-        cards.forEach((card) => {
-          const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
-            );
-          });
-
-          // Show card if not in dev mode or if it's a dev prompt in dev mode
-          card.style.display =
-            !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
-              ? ""
-              : "none";
-        });
-      }
-    });
+    // Update prompt cards visibility
+    const promptsGrid = document.querySelector(".prompts-grid");
+    if (promptsGrid) {
+      const cards = promptsGrid.querySelectorAll(
+        ".prompt-card:not(.contribute-card)"
+      );
+      cards.forEach((card) => {
+        const isPromptForDevs = card.getAttribute("data-for-devs") === "true";
+        // Show card if not in dev mode or if it's a dev prompt in dev mode
+        card.style.display = !isDevMode || isPromptForDevs ? "" : "none";
+      });
+    }
+  } catch (error) {
+    console.error("Error filtering prompts:", error);
+  }
 }
 
 // Update the modal initialization and event listeners
-function createPromptCards() {
+async function createPromptCards() {
   const container = document.querySelector(".container-lg.markdown-body");
   const promptsGrid = document.createElement("div");
   promptsGrid.className = "prompts-grid";
@@ -507,11 +504,9 @@ function createPromptCards() {
   promptsGrid.appendChild(contributeCard);
 
   // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const isDevMode = document.getElementById("audienceSelect").value === "developers";
+  try {
+    const prompts = await getPrompts();
+    const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(
         "h2[id^=act] + p + blockquote"
@@ -571,6 +566,9 @@ function createPromptCards() {
 
         const card = document.createElement("div");
         card.className = "prompt-card";
+        if (matchingPrompt && matchingPrompt.for_devs === true) {
+          card.setAttribute("data-for-devs", "true");
+        }
 
         // Set initial visibility based on dev mode
         if (isDevMode && (!matchingPrompt || !matchingPrompt.for_devs)) {
@@ -655,12 +653,11 @@ function createPromptCards() {
       container.innerHTML = "";
       container.appendChild(promptsGrid);
 
-      // Initialize modal event listeners
-      initializeModalListeners();
-    })
-    .catch((error) => {
-      console.error("Error loading prompts:", error);
-    });
+    // Initialize modal event listeners
+    initializeModalListeners();
+  } catch (error) {
+    console.error("Error loading prompts:", error);
+  }
 }
 
 function initializeModalListeners() {

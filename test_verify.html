@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Frontend Verification - prompts.chat</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --accent-color: #10b981;
+            --accent-color-hover: #059669;
+        }
+        .prompt-card { border: 1px solid #e5e7eb; padding: 1rem; margin-bottom: 1rem; border-radius: 0.5rem; }
+        .prompt-title { font-weight: bold; margin-bottom: 0.5rem; }
+        .dark-mode { background: #1a202c; color: white; }
+        .dev-mode .prompt-card[data-for-devs="false"] { display: none; }
+    </style>
+</head>
+<body>
+    <div class="layout-wrapper">
+        <header class="site-header">
+            <div id="starCount">0</div>
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()">Toggle Dark Mode
+                <span class="sun-icon">☀️</span>
+                <span class="moon-icon" style="display:none">🌙</span>
+            </button>
+        </header>
+        <div class="sidebar">
+            <div id="promptCount">
+                <span class="count-label">All Prompts</span>
+                <span class="count-number">0</span>
+            </div>
+            <input type="text" id="searchInput" placeholder="Search...">
+            <ul id="searchResults"></ul>
+        </div>
+        <div class="main-content">
+            <select id="audienceSelect">
+                <option value="everyone">Everyone</option>
+                <option value="developers">Developers</option>
+            </select>
+            <div class="container-lg markdown-body">
+                <h2 id="act-linux-terminal">Act as a Linux Terminal</h2>
+                <p>Contributed by: [@f](https://github.com/f)</p>
+                <blockquote>I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show.</blockquote>
+
+                <h2 id="act-javascript-console">Act as a JavaScript Console</h2>
+                <p>Contributed by: [@f](https://github.com/f)</p>
+                <blockquote>I want you to act as a javascript console. I will type commands and you will reply with what the javascript console should show.</blockquote>
+            </div>
+        </div>
+    </div>
+    <div id="modalOverlay" style="display:none"></div>
+    <script src="script.js"></script>
+</body>
+</html>

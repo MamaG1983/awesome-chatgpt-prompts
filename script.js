@@ -123,6 +123,34 @@ function updatePromptPreview(promptText, form) {
   return previewText;
 }
 
+let promptsPromise = null;
+
+/**
+ * Fetches and parses prompts from CSV.
+ * Uses a singleton promise to ensure the file is only fetched and parsed once.
+ * @returns {Promise<Array>} Array of prompt objects
+ */
+async function getPrompts() {
+  if (promptsPromise) return promptsPromise;
+
+  promptsPromise = (async () => {
+    try {
+      const response = await fetch("/prompts.csv");
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const csvText = await response.text();
+      const prompts = parseCSV(csvText);
+      // Sort prompts alphabetically by act
+      return prompts.sort((a, b) => a.act.localeCompare(b.act));
+    } catch (error) {
+      console.error("Error loading prompts:", error);
+      promptsPromise = null; // Allow retry on next call
+      throw error;
+    }
+  })();
+
+  return promptsPromise;
+}
+
 // Initialize everything after DOM loads
 document.addEventListener("DOMContentLoaded", () => {
   // Initialize audience selector and dev mode
@@ -202,12 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const prompts = await getPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -415,17 +438,14 @@ function displaySearchResults(results) {
 }
 
 // Function to filter prompts based on dev mode
-function filterPrompts() {
+async function filterPrompts() {
   const isDevMode = document.getElementById("audienceSelect").value === "developers";
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
+  try {
+    const prompts = await getPrompts();
+    const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
           prompt.act.toLowerCase().includes(searchTerm) ||
@@ -476,11 +496,13 @@ function filterPrompts() {
               : "none";
         });
       }
-    });
+  } catch (error) {
+    console.error("Error filtering prompts:", error);
+  }
 }
 
 // Update the modal initialization and event listeners
-function createPromptCards() {
+async function createPromptCards() {
   const container = document.querySelector(".container-lg.markdown-body");
   const promptsGrid = document.createElement("div");
   promptsGrid.className = "prompts-grid";
@@ -507,10 +529,8 @@ function createPromptCards() {
   promptsGrid.appendChild(contributeCard);
 
   // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  try {
+      const prompts = await getPrompts();
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(
@@ -657,10 +677,9 @@ function createPromptCards() {
 
       // Initialize modal event listeners
       initializeModalListeners();
-    })
-    .catch((error) => {
-      console.error("Error loading prompts:", error);
-    });
+  } catch (error) {
+    console.error("Error loading prompts:", error);
+  }
 }
 
 function initializeModalListeners() {

@@ -1,0 +1,3 @@
+## 2026-07-15 - Redundant CSV Fetching in Static Site
+**Learning:** In a Jekyll-based static site with real-time search/filtering, repeated `fetch()` calls for the same data file (e.g., `prompts.csv`) on every interaction (keystroke, toggle) cause measurable network and main-thread overhead. This is exacerbated when multiple functions (`initializeSearch`, `filterPrompts`, `createPromptCards`) independently fetch the same resource.
+**Action:** Implement a singleton promise pattern for data fetching. By caching the promise itself rather than the resolved data, we ensure only one network request is made, and all subsequent callers wait for the same result, preventing race conditions and redundant parsing.

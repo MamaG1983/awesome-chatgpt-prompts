@@ -1,0 +1,3 @@
+## 2026-07-19 - Singleton Promise Caching of Large CSV Assets
+**Learning:** In a vanilla-JS Jekyll application with static CSV database files (`prompts.csv` and `vibeprompts.csv`), hot-path operations like filtering, live-searching, and dynamic card generation repeatedly trigger network fetching and expensive CPU parsing. A singleton promise pattern caching the async fetch/parse chain reduces the overhead to exactly one network request and one parsing execution per user session.
+**Action:** Always implement a singleton promise cache for large client-side data assets (such as CSV/JSON datasets), reset the promise on error to allow retries, and clone arrays before performing operations like sorting to avoid cache mutation side effects.

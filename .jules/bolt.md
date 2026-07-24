@@ -1,0 +1,3 @@
+## 2026-07-24 - Singleton Promise Caching for Static CSV Data
+**Learning:** In static-site architectures, fetching and parsing substantial CSV files (like `prompts.csv` and `vibeprompts.csv`) on highly frequent events (e.g. keypress searches, filter toggles) causes major main-thread lag and redundant network calls. A singleton promise pattern successfully caches the asynchronous parse operation, resolving subsequent calls instantly without any duplicate requests or redundant processing.
+**Action:** Always implement a caching singleton Promise for loading local raw assets (like JSON or CSV) that are repeatedly referenced during user interaction, and clone the resulting data array if in-place mutations (such as sorting) are required.

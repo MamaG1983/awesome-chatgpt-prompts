@@ -13,6 +13,29 @@ function toggleDarkMode() {
   moonIcon.style.display = isDarkMode ? "block" : "none";
 }
 
+let promptsPromise = null;
+
+// Load and cache prompts from CSV using singleton promise pattern
+function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch("/prompts.csv")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+        return response.text();
+      })
+      .then((csvText) => {
+        return parseCSV(csvText);
+      })
+      .catch((error) => {
+        promptsPromise = null; // Reset promise to allow retries on failure
+        throw error;
+      });
+  }
+  return promptsPromise;
+}
+
 // Add these new functions at the top
 function extractVariables(text) {
   const variables = [];
@@ -202,12 +225,9 @@ document.addEventListener("DOMContentLoaded", () => {
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const cachedPrompts = await getPrompts();
+    // Sort cloned prompts alphabetically by act to avoid mutating cached array
+    const prompts = [...cachedPrompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -420,11 +440,9 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Get cached prompts and filter them
+  getPrompts()
+    .then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -506,11 +524,9 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Get cached prompts to get for_devs information
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

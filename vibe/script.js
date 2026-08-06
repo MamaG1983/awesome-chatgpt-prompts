@@ -24,11 +24,26 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
+let vibePromptsPromise = null;
+
 // Load prompts from CSV
 async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+  if (!vibePromptsPromise) {
+    vibePromptsPromise = (async () => {
+      try {
+        const response = await fetch('/vibeprompts.csv');
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+        const text = await response.text();
+        return parseCSV(text);
+      } catch (error) {
+        vibePromptsPromise = null; // Reset on failure to allow retry
+        throw error;
+      }
+    })();
+  }
+  return vibePromptsPromise;
 }
 
 // Update prompt count

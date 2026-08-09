@@ -199,15 +199,35 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+let promptsPromise = null;
+
+// Get prompts using singleton promise pattern to cache results
+async function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = (async () => {
+      try {
+        const response = await fetch("/prompts.csv");
+        if (!response.ok) {
+          throw new Error(`Failed to fetch prompts.csv: ${response.statusText}`);
+        }
+        const csvText = await response.text();
+        return parseCSV(csvText);
+      } catch (error) {
+        promptsPromise = null; // Reset promise on failure to allow retry
+        throw error;
+      }
+    })();
+  }
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
+    const rawPrompts = await getPrompts();
 
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    // Sort prompts alphabetically by act - clone first to prevent mutating cache
+    const prompts = [...rawPrompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -415,72 +435,71 @@ function displaySearchResults(results) {
 }
 
 // Function to filter prompts based on dev mode
-function filterPrompts() {
+async function filterPrompts() {
   const isDevMode = document.getElementById("audienceSelect").value === "developers";
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
-        const matchesSearch =
-          !searchTerm ||
-          prompt.act.toLowerCase().includes(searchTerm) ||
-          prompt.prompt.toLowerCase().includes(searchTerm);
+  try {
+    const prompts = await getPrompts();
+    const filteredPrompts = prompts.filter((prompt) => {
+      const matchesSearch =
+        !searchTerm ||
+        prompt.act.toLowerCase().includes(searchTerm) ||
+        prompt.prompt.toLowerCase().includes(searchTerm);
 
-        return isDevMode
-          ? matchesSearch && prompt.for_devs === true
-          : matchesSearch;
-      });
-
-      // Update count with filtered results
-      updatePromptCount(
-        filteredPrompts.length,
-        isDevMode
-          ? prompts.filter((p) => p.for_devs === true).length
-          : prompts.length
-      );
-      displaySearchResults(filteredPrompts);
-
-      // Update prompt cards visibility
-      const promptsGrid = document.querySelector(".prompts-grid");
-      if (promptsGrid) {
-        const cards = promptsGrid.querySelectorAll(
-          ".prompt-card:not(.contribute-card)"
-        );
-        cards.forEach((card) => {
-          const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
-            );
-          });
-
-          // Show card if not in dev mode or if it's a dev prompt in dev mode
-          card.style.display =
-            !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
-              ? ""
-              : "none";
-        });
-      }
+      return isDevMode
+        ? matchesSearch && prompt.for_devs === true
+        : matchesSearch;
     });
+
+    // Update count with filtered results
+    updatePromptCount(
+      filteredPrompts.length,
+      isDevMode
+        ? prompts.filter((p) => p.for_devs === true).length
+        : prompts.length
+    );
+    displaySearchResults(filteredPrompts);
+
+    // Update prompt cards visibility
+    const promptsGrid = document.querySelector(".prompts-grid");
+    if (promptsGrid) {
+      const cards = promptsGrid.querySelectorAll(
+        ".prompt-card:not(.contribute-card)"
+      );
+      cards.forEach((card) => {
+        const title = card.querySelector(".prompt-title").textContent.trim();
+        const matchingPrompt = prompts.find((p) => {
+          const pTitle = p.act
+            .replace(/\s+/g, " ")
+            .replace(/[\n\r]/g, "")
+            .trim();
+          const cardTitle = title
+            .replace(/\s+/g, " ")
+            .replace(/[\n\r]/g, "")
+            .trim();
+          return (
+            pTitle.toLowerCase() === cardTitle.toLowerCase() ||
+            pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
+            cardTitle.toLowerCase().includes(pTitle.toLowerCase())
+          );
+        });
+
+        // Show card if not in dev mode or if it's a dev prompt in dev mode
+        card.style.display =
+          !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
+            ? ""
+            : "none";
+      });
+    }
+  } catch (error) {
+    console.error("Error filtering prompts:", error);
+  }
 }
 
 // Update the modal initialization and event listeners
-function createPromptCards() {
+async function createPromptCards() {
   const container = document.querySelector(".container-lg.markdown-body");
   const promptsGrid = document.createElement("div");
   promptsGrid.className = "prompts-grid";
@@ -506,11 +525,9 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Fetch prompts using cached singleton promise pattern to get for_devs information
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

@@ -24,11 +24,26 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
-// Load prompts from CSV
+let vibepromptsPromise = null;
+
+// Load prompts from CSV using singleton promise pattern to cache results
 async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+  if (!vibepromptsPromise) {
+    vibepromptsPromise = (async () => {
+      try {
+        const response = await fetch('/vibeprompts.csv');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch vibeprompts.csv: ${response.statusText}`);
+        }
+        const text = await response.text();
+        return parseCSV(text);
+      } catch (error) {
+        vibepromptsPromise = null; // Reset promise on failure to allow retry
+        throw error;
+      }
+    })();
+  }
+  return vibepromptsPromise;
 }
 
 // Update prompt count
@@ -105,9 +120,16 @@ async function renderSidebarPrompts() {
   const prompts = await loadPrompts();
   const searchResults = document.getElementById('searchResults');
   if (searchResults) {
-    searchResults.innerHTML = prompts.map(({ app }) => `
-      <li class="search-result-item" onclick="scrollToPrompt('${app}')">${app}</li>
-    `).join('');
+    searchResults.innerHTML = '';
+    prompts.forEach(({ app }) => {
+      const li = document.createElement('li');
+      li.className = 'search-result-item';
+      li.textContent = app;
+      li.addEventListener('click', () => {
+        scrollToPrompt(app);
+      });
+      searchResults.appendChild(li);
+    });
   }
 }
 
@@ -200,22 +222,32 @@ function setupSearch() {
       if (window.innerWidth <= 768 && !query.trim()) {
         searchResults.innerHTML = ''; // Clear results on mobile if no search query
       } else {
-        searchResults.innerHTML = filtered.length === 0 
-          ? `<div class="search-result-item add-prompt">
-              <a href="https://github.com/f/awesome-chatgpt-prompts/pulls" target="_blank" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 8px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="16"></line>
-                  <line x1="8" y1="12" x2="16" y2="12"></line>
-                </svg>
-                Add this prompt
-              </a>
-            </div>`
-          : filtered.map(({ app, prompt }) => `
-              <li class="search-result-item" onclick="scrollToPrompt('${app}', '${prompt}')">
-                ${app}
-              </li>
-            `).join('');
+        searchResults.innerHTML = '';
+        if (filtered.length === 0) {
+          const div = document.createElement('div');
+          div.className = 'search-result-item add-prompt';
+          div.innerHTML = `
+            <a href="https://github.com/f/awesome-chatgpt-prompts/pulls" target="_blank" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 8px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="16"></line>
+                <line x1="8" y1="12" x2="16" y2="12"></line>
+              </svg>
+              Add this prompt
+            </a>
+          `;
+          searchResults.appendChild(div);
+        } else {
+          filtered.forEach(({ app, prompt }) => {
+            const li = document.createElement('li');
+            li.className = 'search-result-item';
+            li.textContent = app;
+            li.addEventListener('click', () => {
+              scrollToPrompt(app, prompt);
+            });
+            searchResults.appendChild(li);
+          });
+        }
       }
     });
   }

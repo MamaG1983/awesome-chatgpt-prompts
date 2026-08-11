@@ -1,0 +1,3 @@
+## 2026-08-11 - Caching CSV fetch and parse with Singleton Promise Pattern
+**Learning:** Repetitive fetching and parsing of prompts.csv and vibeprompts.csv on user input (e.g. keypresses in the search bar or audience toggles) introduces significant main-thread lag and redundant network request overhead. A singleton promise pattern resolves this by caching the resolved parsed array instantly, making all subsequent search queries and category filters lightning fast and network-free.
+**Action:** Always implement a promise-based caching layer or singleton getPrompts()/loadPrompts() fetcher for static assets (like CSV or JSON data) loaded dynamically via the frontend. Avoid initiating new fetch requests inside frequent event listeners like 'input' or 'change'.

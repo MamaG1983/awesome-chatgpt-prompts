@@ -1,0 +1,3 @@
+## 2026-08-15 - Singleton Promise Caching for CSV Prompts Data
+**Learning:** Fetching and parsing CSV files (`prompts.csv` ~113KB and `vibeprompts.csv` ~29KB) repeatedly during user interaction events (such as switching target audience or typing in search inputs) causes redundant network overhead and main-thread CPU spikes (~300ms for 100 CSV parse cycles).
+**Action:** Wrap the `fetch` and parsing logic in a singleton promise pattern (`getPrompts()`) that caches the parsed result in memory across function calls, while resetting the promise on network errors to allow retries. Always return a clone when sorting cached data to prevent mutating shared state.

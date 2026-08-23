@@ -199,15 +199,32 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+let promptsPromise = null;
+
+/**
+ * Cached fetch & parse for prompts.csv to prevent redundant HTTP requests and CSV parsing.
+ * Returns a promise resolving to parsed prompts array.
+ */
+function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => parseCSV(csvText))
+      .catch((error) => {
+        promptsPromise = null; // Reset on error to allow retry
+        throw error;
+      });
+  }
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
+    const prompts = await getPrompts();
 
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    // Sort prompts alphabetically by act on a cloned array to avoid mutating cached data
+    const sortedPrompts = [...prompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -216,21 +233,21 @@ async function initializeSearch() {
 
     // Update prompt count
     const totalPrompts = isDevMode
-      ? prompts.filter((p) => p.for_devs === true).length
-      : prompts.length;
+      ? sortedPrompts.filter((p) => p.for_devs === true).length
+      : sortedPrompts.length;
     updatePromptCount(totalPrompts, totalPrompts);
 
     // Show filtered prompts initially
     const filteredPrompts = isDevMode
-      ? prompts.filter((p) => p.for_devs === true)
-      : prompts;
+      ? sortedPrompts.filter((p) => p.for_devs === true)
+      : sortedPrompts;
     displaySearchResults(filteredPrompts);
 
     searchInput.addEventListener("input", (e) => {
       const searchTerm = e.target.value.toLowerCase();
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
-      const filteredPrompts = prompts.filter((prompt) => {
+      const filteredPrompts = sortedPrompts.filter((prompt) => {
         const matchesSearch =
           prompt.act.toLowerCase().includes(searchTerm) ||
           prompt.prompt.toLowerCase().includes(searchTerm);
@@ -242,8 +259,8 @@ async function initializeSearch() {
 
       // Update count with filtered results
       const totalPrompts = isDevMode
-        ? prompts.filter((p) => p.for_devs === true).length
-        : prompts.length;
+        ? sortedPrompts.filter((p) => p.for_devs === true).length
+        : sortedPrompts.length;
       updatePromptCount(filteredPrompts.length, totalPrompts);
       displaySearchResults(filteredPrompts);
     });
@@ -420,11 +437,8 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  getPrompts()
+    .then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -476,6 +490,9 @@ function filterPrompts() {
               : "none";
         });
       }
+    })
+    .catch((error) => {
+      console.error("Error filtering prompts:", error);
     });
 }
 
@@ -506,11 +523,9 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Fetch prompts.csv to get for_devs information (using cached promise)
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

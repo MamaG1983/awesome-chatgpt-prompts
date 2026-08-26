@@ -1,3 +1,17 @@
+// Helper function: Debounce event handlers to improve input responsiveness
+// ⚡ Bolt Optimization: Debounce frequent input events to avoid unnecessary recalculations and main-thread DOM thrashing
+function debounce(func, wait = 150) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 // Dark mode functionality
 function toggleDarkMode() {
   const body = document.body;
@@ -226,7 +240,8 @@ async function initializeSearch() {
       : prompts;
     displaySearchResults(filteredPrompts);
 
-    searchInput.addEventListener("input", (e) => {
+    // ⚡ Bolt Optimization: Debounce search input listener (150ms delay) to prevent redundant DOM updates on every keystroke
+    searchInput.addEventListener("input", debounce((e) => {
       const searchTerm = e.target.value.toLowerCase();
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
@@ -246,7 +261,7 @@ async function initializeSearch() {
         : prompts.length;
       updatePromptCount(filteredPrompts.length, totalPrompts);
       displaySearchResults(filteredPrompts);
-    });
+    }, 150));
   } catch (error) {
     console.error("Error loading prompts:", error);
   }

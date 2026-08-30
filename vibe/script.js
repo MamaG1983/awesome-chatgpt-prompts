@@ -24,11 +24,21 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
-// Load prompts from CSV
-async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+// Singleton promise to cache the CSV load & parse operation across callers and search inputs
+let promptsPromise = null;
+
+// Load prompts from CSV with caching
+function loadPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch('/vibeprompts.csv')
+      .then((response) => response.text())
+      .then((text) => parseCSV(text))
+      .catch((err) => {
+        promptsPromise = null; // Reset on failure so subsequent attempts can retry
+        throw err;
+      });
+  }
+  return promptsPromise;
 }
 
 // Update prompt count
@@ -180,13 +190,22 @@ function scrollToPrompt(title, prompt) {
   }
 }
 
-// Search functionality
+// Helper: Debounce function to delay execution on rapid events (e.g., search input)
+function debounce(fn, delay = 150) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
+
+// Search functionality with debouncing to prevent excessive filtering and DOM thrashing
 function setupSearch() {
   const searchInput = document.getElementById('searchInput');
   const searchResults = document.getElementById('searchResults');
 
   if (searchInput && searchResults) {
-    searchInput.addEventListener('input', async (e) => {
+    const handleInput = debounce(async (e) => {
       const query = e.target.value.toLowerCase();
       const prompts = await loadPrompts();
       const filtered = prompts.filter(({ app, prompt }) => 
@@ -217,7 +236,9 @@ function setupSearch() {
               </li>
             `).join('');
       }
-    });
+    }, 150);
+
+    searchInput.addEventListener('input', handleInput);
   }
 }
 

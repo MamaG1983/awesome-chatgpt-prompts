@@ -1,0 +1,3 @@
+## 2025-02-23 - Singleton Promise Caching and Search Debouncing in Vibe Section
+**Learning:** `vibeprompts.csv` in the `/vibe` page was previously fetched and parsed synchronously/asynchronously on every single keystroke in the search input as well as on page render calls, resulting in redundant network requests and CSV parsing overhead on the main thread.
+**Action:** Use a singleton promise pattern (`promptsPromise`) for `loadPrompts()` to cache CSV parsing per page session, combined with `debounce` (150ms) on `searchInput` event listener to prevent main thread thrashing during rapid keystrokes.

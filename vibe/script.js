@@ -24,11 +24,30 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
-// Load prompts from CSV
+// Singleton promise cache to avoid re-fetching and re-parsing vibeprompts.csv on every search keystroke
+let promptsPromise = null;
+
+// Load prompts from CSV with singleton promise caching
 async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+  if (!promptsPromise) {
+    promptsPromise = fetch('/vibeprompts.csv')
+      .then((response) => response.text())
+      .then((text) => parseCSV(text))
+      .catch((error) => {
+        promptsPromise = null;
+        throw error;
+      });
+  }
+  return promptsPromise;
+}
+
+// Debounce helper to avoid excessive DOM re-renders on fast keystrokes
+function debounce(func, wait = 150) {
+  let timeout;
+  return function (...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
 }
 
 // Update prompt count
@@ -180,44 +199,53 @@ function scrollToPrompt(title, prompt) {
   }
 }
 
-// Search functionality
+// Search functionality with debounced search listener
 function setupSearch() {
   const searchInput = document.getElementById('searchInput');
   const searchResults = document.getElementById('searchResults');
 
   if (searchInput && searchResults) {
-    searchInput.addEventListener('input', async (e) => {
-      const query = e.target.value.toLowerCase();
-      const prompts = await loadPrompts();
-      const filtered = prompts.filter(({ app, prompt }) => 
-        app.toLowerCase().includes(query) || prompt.toLowerCase().includes(query)
-      );
+    searchInput.addEventListener(
+      'input',
+      debounce(async (e) => {
+        const query = e.target.value.toLowerCase();
+        const prompts = await loadPrompts();
+        const filtered = prompts.filter(
+          ({ app, prompt }) =>
+            app.toLowerCase().includes(query) || prompt.toLowerCase().includes(query)
+        );
 
-      // Update prompt count
-      updatePromptCount(filtered.length, prompts.length);
+        // Update prompt count
+        updatePromptCount(filtered.length, prompts.length);
 
-      // Show filtered results
-      if (window.innerWidth <= 768 && !query.trim()) {
-        searchResults.innerHTML = ''; // Clear results on mobile if no search query
-      } else {
-        searchResults.innerHTML = filtered.length === 0 
-          ? `<div class="search-result-item add-prompt">
-              <a href="https://github.com/f/awesome-chatgpt-prompts/pulls" target="_blank" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 8px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="16"></line>
-                  <line x1="8" y1="12" x2="16" y2="12"></line>
-                </svg>
-                Add this prompt
-              </a>
-            </div>`
-          : filtered.map(({ app, prompt }) => `
-              <li class="search-result-item" onclick="scrollToPrompt('${app}', '${prompt}')">
-                ${app}
-              </li>
-            `).join('');
-      }
-    });
+        // Show filtered results
+        if (window.innerWidth <= 768 && !query.trim()) {
+          searchResults.innerHTML = ''; // Clear results on mobile if no search query
+        } else {
+          searchResults.innerHTML =
+            filtered.length === 0
+              ? `<div class="search-result-item add-prompt">
+                  <a href="https://github.com/f/awesome-chatgpt-prompts/pulls" target="_blank" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 8px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="8" x2="12" y2="16"></line>
+                      <line x1="8" y1="12" x2="16" y2="12"></line>
+                    </svg>
+                    Add this prompt
+                  </a>
+                </div>`
+              : filtered
+                  .map(
+                    ({ app, prompt }) => `
+                  <li class="search-result-item" onclick="scrollToPrompt('${app}', '${prompt}')">
+                    ${app}
+                  </li>
+                `
+                  )
+                  .join('');
+        }
+      }, 150)
+    );
   }
 }
 

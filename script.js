@@ -1,3 +1,28 @@
+// Singleton promise cache for prompts data
+let promptsPromise = null;
+
+function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => parseCSV(csvText))
+      .catch((error) => {
+        promptsPromise = null; // Reset on failure to allow retry
+        throw error;
+      });
+  }
+  return promptsPromise;
+}
+
+// Debounce helper to limit execution frequency
+function debounce(func, delay = 150) {
+  let timeoutId;
+  return function (...args) {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => func.apply(this, args), delay);
+  };
+}
+
 // Dark mode functionality
 function toggleDarkMode() {
   const body = document.body;
@@ -202,12 +227,10 @@ document.addEventListener("DOMContentLoaded", () => {
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
+    const rawPrompts = await getPrompts();
 
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    // Sort prompts alphabetically by act (copying array to preserve original order)
+    const prompts = [...rawPrompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -226,7 +249,7 @@ async function initializeSearch() {
       : prompts;
     displaySearchResults(filteredPrompts);
 
-    searchInput.addEventListener("input", (e) => {
+    const handleSearchInput = debounce((e) => {
       const searchTerm = e.target.value.toLowerCase();
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
@@ -246,7 +269,9 @@ async function initializeSearch() {
         : prompts.length;
       updatePromptCount(filteredPrompts.length, totalPrompts);
       displaySearchResults(filteredPrompts);
-    });
+    }, 150);
+
+    searchInput.addEventListener("input", handleSearchInput);
   } catch (error) {
     console.error("Error loading prompts:", error);
   }
@@ -420,11 +445,10 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Reuse cached prompts promise
+  getPrompts()
+    .then((rawPrompts) => {
+      const prompts = [...rawPrompts].sort((a, b) => a.act.localeCompare(b.act));
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -476,6 +500,9 @@ function filterPrompts() {
               : "none";
         });
       }
+    })
+    .catch((error) => {
+      console.error("Error filtering prompts:", error);
     });
 }
 
@@ -506,11 +533,9 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Fetch prompts.csv using cached singleton promise
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

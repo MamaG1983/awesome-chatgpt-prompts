@@ -1,0 +1,3 @@
+## 2026-09-04 - Singleton Promise Caching for CSV Data Loaders
+**Learning:** In static site architectures where large CSV datasets (`prompts.csv`, `vibeprompts.csv`) are loaded client-side across multiple initialization and filter routines, executing raw `fetch()` and `parseCSV()` on every user interaction (or multiple DOM handlers) causes redundant network calls and main-thread parsing overhead. Cloning array results (`[...prompts]`) before performing in-place operations like `.sort()` is necessary to avoid mutating the cached singleton state.
+**Action:** Wrap CSV fetching and parsing logic in a singleton promise loader (`getPrompts()`) with error-reset handling and immutable copy operations when sorting shared arrays.

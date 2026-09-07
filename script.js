@@ -199,12 +199,28 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Singleton cache for CSV prompt fetching and parsing
+let promptsPromise = null;
+
+function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => parseCSV(csvText))
+      .catch((error) => {
+        promptsPromise = null;
+        throw error;
+      });
+  }
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
+    const rawPrompts = await getPrompts();
+    // Clone prompts array before sorting to avoid mutating shared cached array
+    const prompts = [...rawPrompts];
 
     // Sort prompts alphabetically by act
     prompts.sort((a, b) => a.act.localeCompare(b.act));
@@ -420,12 +436,9 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
+  // Use cached prompts
+  getPrompts().then((prompts) => {
+    const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
           prompt.act.toLowerCase().includes(searchTerm) ||
@@ -506,12 +519,9 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const isDevMode = document.getElementById("audienceSelect").value === "developers";
+  // Fetch cached prompts to get for_devs information
+  getPrompts().then((prompts) => {
+    const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(
         "h2[id^=act] + p + blockquote"

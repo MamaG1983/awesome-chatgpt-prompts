@@ -1,0 +1,3 @@
+## 2026-09-13 - Singleton Promise Caching for CSV Data and O(1) DOM Metadata Toggling
+**Learning:** `prompts.csv` (~113KB) was repeatedly fetched over HTTP and re-parsed via RegExp CSV parsing during search initialization, card creation, and audience filter toggling. Furthermore, audience filter toggling executed an O(N*M) string comparison search across all DOM prompt cards to match against CSV data.
+**Action:** Implement a singleton promise pattern (`getPrompts()`) to cache fetched/parsed CSV data once across all operations, and attach a `data-for-devs` attribute to card DOM elements on creation for O(1) per-card visibility toggling.

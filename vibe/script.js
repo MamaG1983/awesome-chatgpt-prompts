@@ -24,11 +24,24 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
-// Load prompts from CSV
+// Singleton promise cache for vibeprompts.csv
+let vibePromptsPromise = null;
+
+// Load prompts from CSV with singleton promise caching
 async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+  if (!vibePromptsPromise) {
+    vibePromptsPromise = (async () => {
+      try {
+        const response = await fetch('/vibeprompts.csv');
+        const text = await response.text();
+        return parseCSV(text);
+      } catch (err) {
+        vibePromptsPromise = null; // Reset cache on failure to allow retry
+        throw err;
+      }
+    })();
+  }
+  return vibePromptsPromise;
 }
 
 // Update prompt count

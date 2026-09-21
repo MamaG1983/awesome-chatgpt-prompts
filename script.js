@@ -199,15 +199,30 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Singleton promise cache for prompts.csv
+let promptsPromise = null;
+
+function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => {
+        const prompts = parseCSV(csvText);
+        prompts.sort((a, b) => a.act.localeCompare(b.act));
+        return prompts;
+      })
+      .catch((err) => {
+        promptsPromise = null; // Reset on failure to allow retry
+        throw err;
+      });
+  }
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const prompts = await getPrompts();
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -420,11 +435,8 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Use cached prompts singleton
+  getPrompts().then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -506,11 +518,8 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Fetch prompts.csv using cached singleton to get for_devs information
+  getPrompts().then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(
@@ -572,8 +581,12 @@ function createPromptCards() {
         const card = document.createElement("div");
         card.className = "prompt-card";
 
+        // Store metadata on card element for O(1) attribute filtering
+        const isForDevs = !!(matchingPrompt && matchingPrompt.for_devs === true);
+        card.dataset.forDevs = isForDevs ? "true" : "false";
+
         // Set initial visibility based on dev mode
-        if (isDevMode && (!matchingPrompt || !matchingPrompt.for_devs)) {
+        if (isDevMode && !isForDevs) {
           card.style.display = "none";
         }
 

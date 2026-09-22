@@ -1,0 +1,3 @@
+## 2026-09-22 - Singleton Promise Caching and Input Debouncing for CSV Data
+**Learning:** Repeatedly fetching and parsing `prompts.csv` (~113KB) on user interactions (such as search keystrokes or audience toggling) introduces network latency and main-thread parsing overhead. Using a singleton Promise pattern caches the fetch and parse operations across modules without duplicate network requests or array mutations.
+**Action:** Wrap raw CSV data fetching in a singleton promise (`getPrompts()`) that resets on error, clone arrays before sorting (`[...data].sort()`), and debounce key event handlers (e.g., search input) to prevent main-thread DOM thrashing.

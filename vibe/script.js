@@ -180,13 +180,23 @@ function scrollToPrompt(title, prompt) {
   }
 }
 
+// Helper utility function to debounce frequent events
+function debounce(func, wait = 150) {
+  let timeout;
+  return function (...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
+
 // Search functionality
 function setupSearch() {
   const searchInput = document.getElementById('searchInput');
   const searchResults = document.getElementById('searchResults');
 
   if (searchInput && searchResults) {
-    searchInput.addEventListener('input', async (e) => {
+    // Debounce search input handler to optimize performance during rapid typing
+    searchInput.addEventListener('input', debounce(async (e) => {
       const query = e.target.value.toLowerCase();
       const prompts = await loadPrompts();
       const filtered = prompts.filter(({ app, prompt }) => 
@@ -217,7 +227,7 @@ function setupSearch() {
               </li>
             `).join('');
       }
-    });
+    }, 150));
   }
 }
 

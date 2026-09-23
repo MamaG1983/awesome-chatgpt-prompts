@@ -199,6 +199,15 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Helper utility function to debounce frequent events
+function debounce(func, wait = 150) {
+  let timeout;
+  return function (...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
@@ -226,7 +235,8 @@ async function initializeSearch() {
       : prompts;
     displaySearchResults(filteredPrompts);
 
-    searchInput.addEventListener("input", (e) => {
+    // Debounce search input handler to optimize performance during rapid typing
+    searchInput.addEventListener("input", debounce((e) => {
       const searchTerm = e.target.value.toLowerCase();
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
@@ -246,7 +256,7 @@ async function initializeSearch() {
         : prompts.length;
       updatePromptCount(filteredPrompts.length, totalPrompts);
       displaySearchResults(filteredPrompts);
-    });
+    }, 150));
   } catch (error) {
     console.error("Error loading prompts:", error);
   }

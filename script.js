@@ -445,6 +445,16 @@ function filterPrompts() {
       );
       displaySearchResults(filteredPrompts);
 
+      // Pre-normalize CSV prompt titles once to avoid O(N*M) redundant string/regex operations inside inner loop
+      const processedPrompts = prompts.map((p) => ({
+        ...p,
+        cleanTitle: p.act
+          .replace(/\s+/g, " ")
+          .replace(/[\n\r]/g, "")
+          .trim()
+          .toLowerCase(),
+      }));
+
       // Update prompt cards visibility
       const promptsGrid = document.querySelector(".prompts-grid");
       if (promptsGrid) {
@@ -453,19 +463,17 @@ function filterPrompts() {
         );
         cards.forEach((card) => {
           const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
+          const cardTitle = title
+            .replace(/\s+/g, " ")
+            .replace(/[\n\r]/g, "")
+            .trim()
+            .toLowerCase();
+
+          const matchingPrompt = processedPrompts.find((p) => {
             return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
+              p.cleanTitle === cardTitle ||
+              p.cleanTitle.includes(cardTitle) ||
+              cardTitle.includes(p.cleanTitle)
             );
           });
 
@@ -513,6 +521,16 @@ function createPromptCards() {
       const prompts = parseCSV(csvText);
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
+      // Pre-normalize CSV prompt titles once to avoid O(N*M) redundant string/regex operations inside inner loop
+      const processedPrompts = prompts.map((p) => ({
+        ...p,
+        cleanTitle: p.act
+          .replace(/\s+/g, " ")
+          .replace(/[\n\r]/g, "")
+          .trim()
+          .toLowerCase(),
+      }));
+
       const promptElements = document.querySelectorAll(
         "h2[id^=act] + p + blockquote"
       );
@@ -522,20 +540,18 @@ function createPromptCards() {
           blockquote.previousElementSibling.previousElementSibling.textContent.trim();
         const content = blockquote.textContent.trim();
 
+        const elementTitle = title
+          .replace(/\s+/g, " ")
+          .replace(/[\n\r]/g, "")
+          .trim()
+          .toLowerCase();
+
         // Find matching prompt in CSV
-        const matchingPrompt = prompts.find((p) => {
-          const csvTitle = p.act
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          const elementTitle = title
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
+        const matchingPrompt = processedPrompts.find((p) => {
           return (
-            csvTitle.toLowerCase() === elementTitle.toLowerCase() ||
-            csvTitle.toLowerCase().includes(elementTitle.toLowerCase()) ||
-            elementTitle.toLowerCase().includes(csvTitle.toLowerCase())
+            p.cleanTitle === elementTitle ||
+            p.cleanTitle.includes(elementTitle) ||
+            elementTitle.includes(p.cleanTitle)
           );
         });
 

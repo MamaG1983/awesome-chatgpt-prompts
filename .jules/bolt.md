@@ -1,0 +1,3 @@
+## 2026-09-29 - Cache prompts.csv Network Fetch & Tag DOM Cards with Dataset Attributes
+**Learning:** In static Jekyll architectures rendering prompt cards from CSV data, re-fetching and re-parsing `prompts.csv` on every audience filter change or search interaction blocks the main thread. Additionally, checking every DOM card against the full CSV array using string normalization inside nested `.find()` loops during filtering causes O(N * M) performance degradation.
+**Action:** Use a singleton promise (`getPrompts()`) to cache fetched CSV data, pre-normalize titles into a `cleanTitle` property during parsing, and tag DOM card elements with `card.dataset.forDevs` during creation to enable O(N) visibility toggling.

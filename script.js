@@ -206,6 +206,13 @@ async function initializeSearch() {
     const csvText = await response.text();
     const prompts = parseCSV(csvText);
 
+    // Bolt Optimization: Pre-compute lowercased strings once to avoid repeated string allocations
+    // and lowercasing operations on every keystroke in searchInput listener.
+    prompts.forEach((prompt) => {
+      prompt.actLower = prompt.act ? prompt.act.toLowerCase() : "";
+      prompt.promptLower = prompt.prompt ? prompt.prompt.toLowerCase() : "";
+    });
+
     // Sort prompts alphabetically by act
     prompts.sort((a, b) => a.act.localeCompare(b.act));
 
@@ -232,8 +239,8 @@ async function initializeSearch() {
 
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
-          prompt.act.toLowerCase().includes(searchTerm) ||
-          prompt.prompt.toLowerCase().includes(searchTerm);
+          prompt.actLower.includes(searchTerm) ||
+          prompt.promptLower.includes(searchTerm);
 
         return isDevMode
           ? matchesSearch && prompt.for_devs === true

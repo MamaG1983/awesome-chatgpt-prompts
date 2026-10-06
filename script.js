@@ -199,15 +199,27 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Singleton promise pattern to cache prompt fetching and parsing
+let cachedPromptsPromise = null;
+function getPrompts() {
+  if (!cachedPromptsPromise) {
+    cachedPromptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => parseCSV(csvText))
+      .catch((error) => {
+        cachedPromptsPromise = null;
+        throw error;
+      });
+  }
+  return cachedPromptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const rawPrompts = await getPrompts();
+    // Sort a clone of prompts alphabetically by act to avoid mutating shared cache
+    const prompts = [...rawPrompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -420,11 +432,9 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Use cached prompts instead of re-fetching and re-parsing CSV
+  getPrompts()
+    .then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -445,37 +455,20 @@ function filterPrompts() {
       );
       displaySearchResults(filteredPrompts);
 
-      // Update prompt cards visibility
+      // Update prompt cards visibility using dataset attribute (O(1) lookup per card)
       const promptsGrid = document.querySelector(".prompts-grid");
       if (promptsGrid) {
         const cards = promptsGrid.querySelectorAll(
           ".prompt-card:not(.contribute-card)"
         );
         cards.forEach((card) => {
-          const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
-            );
-          });
-
-          // Show card if not in dev mode or if it's a dev prompt in dev mode
-          card.style.display =
-            !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
-              ? ""
-              : "none";
+          const isDevCard = card.dataset.forDevs === "true";
+          card.style.display = !isDevMode || isDevCard ? "" : "none";
         });
       }
+    })
+    .catch((error) => {
+      console.error("Error filtering prompts:", error);
     });
 }
 
@@ -506,11 +499,9 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Fetch cached prompts to get for_devs information
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(
@@ -571,9 +562,11 @@ function createPromptCards() {
 
         const card = document.createElement("div");
         card.className = "prompt-card";
+        const isForDevs = !!(matchingPrompt && matchingPrompt.for_devs === true);
+        card.dataset.forDevs = isForDevs ? "true" : "false";
 
         // Set initial visibility based on dev mode
-        if (isDevMode && (!matchingPrompt || !matchingPrompt.for_devs)) {
+        if (isDevMode && !isForDevs) {
           card.style.display = "none";
         }
 

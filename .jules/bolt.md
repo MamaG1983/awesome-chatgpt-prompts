@@ -1,0 +1,3 @@
+## 2025-02-17 - Singleton Promise Caching & Search Debouncing on Vibe Coding Page
+**Learning:** In `vibe/script.js`, searching or input events repeatedly called `loadPrompts()`, which initiated a new `fetch('/vibeprompts.csv')` and CSV parsing operation on every keystroke. Using a singleton promise pattern for `loadPrompts()` caches the CSV data promise across all calls, reducing network requests to 1 and eliminating duplicate CSV parsing. Additionally, adding a 150ms debounce to the search input handler avoids main-thread DOM thrashing during rapid typing.
+**Action:** Always implement singleton promise caching for static asset/CSV fetching functions and debounce search input handlers in Vanilla JS components that filter and render lists in real time.

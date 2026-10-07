@@ -24,11 +24,29 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
-// Load prompts from CSV
-async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+let promptsPromise = null;
+
+// Load prompts from CSV with singleton promise caching to prevent repeated network fetching and parsing
+function loadPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch('/vibeprompts.csv')
+      .then((response) => response.text())
+      .then((text) => parseCSV(text))
+      .catch((error) => {
+        promptsPromise = null; // Reset cache on failure to allow retries
+        throw error;
+      });
+  }
+  return promptsPromise;
+}
+
+// Debounce helper to prevent main-thread DOM thrashing on rapid keystrokes
+function debounce(func, wait) {
+  let timeout;
+  return function (...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
 }
 
 // Update prompt count
@@ -186,7 +204,8 @@ function setupSearch() {
   const searchResults = document.getElementById('searchResults');
 
   if (searchInput && searchResults) {
-    searchInput.addEventListener('input', async (e) => {
+    // Debounce search input handler (150ms) to prevent excessive CSV processing and DOM thrashing
+    searchInput.addEventListener('input', debounce(async (e) => {
       const query = e.target.value.toLowerCase();
       const prompts = await loadPrompts();
       const filtered = prompts.filter(({ app, prompt }) => 
@@ -217,7 +236,7 @@ function setupSearch() {
               </li>
             `).join('');
       }
-    });
+    }, 150));
   }
 }
 

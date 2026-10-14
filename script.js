@@ -209,6 +209,13 @@ async function initializeSearch() {
     // Sort prompts alphabetically by act
     prompts.sort((a, b) => a.act.localeCompare(b.act));
 
+    // Performance optimization: Pre-compute lowercase search strings once
+    // to avoid repeated string allocations and .toLowerCase() calls on every search keystroke
+    prompts.forEach((prompt) => {
+      prompt.actLower = (prompt.act || "").toLowerCase();
+      prompt.promptLower = (prompt.prompt || "").toLowerCase();
+    });
+
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
     const promptCount = document.getElementById("promptCount");
@@ -232,8 +239,8 @@ async function initializeSearch() {
 
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
-          prompt.act.toLowerCase().includes(searchTerm) ||
-          prompt.prompt.toLowerCase().includes(searchTerm);
+          prompt.actLower.includes(searchTerm) ||
+          prompt.promptLower.includes(searchTerm);
 
         return isDevMode
           ? matchesSearch && prompt.for_devs === true

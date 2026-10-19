@@ -1,0 +1,3 @@
+## 2026-10-19 - Singleton CSV Promise Caching & Debouncing in `vibe/script.js`
+**Learning:** In static Jekyll prompt libraries like `prompts.chat`, fetching and parsing CSV prompt files (`/vibeprompts.csv`) on every input keystroke or subpage render creates redundant HTTP fetches and main-thread CSV parsing blocks. Wrapping the fetch in a singleton promise pattern (`promptsPromise`) and pre-normalizing searchable string properties (`appLower`, `promptLower`) reduces CSV fetches to 1 per session and eliminates redundant string allocations during real-time search.
+**Action:** Always wrap CSV/JSON static file requests in singleton promise caches and pre-compute lowercased properties on items during initial load rather than inside event loop filter callbacks.

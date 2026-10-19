@@ -24,11 +24,42 @@ function parseCSV(csv) {
     .filter((entry) => entry.app && entry.prompt);
 }
 
-// Load prompts from CSV
+// Singleton promise cache for prompts to avoid redundant fetching and parsing
+let promptsPromise = null;
+
+// Debounce helper to limit execution frequency of rapid events (e.g., search input)
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// Load prompts from CSV with promise caching and pre-computed lowercase fields
 async function loadPrompts() {
-  const response = await fetch('/vibeprompts.csv');
-  const text = await response.text();
-  return parseCSV(text);
+  if (!promptsPromise) {
+    promptsPromise = fetch('/vibeprompts.csv')
+      .then((response) => response.text())
+      .then((text) => {
+        const prompts = parseCSV(text);
+        // Pre-compute lowercase strings once to optimize real-time search filtering
+        return prompts.map((p) => ({
+          ...p,
+          appLower: (p.app || '').toLowerCase(),
+          promptLower: (p.prompt || '').toLowerCase(),
+        }));
+      })
+      .catch((err) => {
+        promptsPromise = null; // Reset cache on failure to allow retry
+        throw err;
+      });
+  }
+  return promptsPromise;
 }
 
 // Update prompt count
@@ -100,14 +131,19 @@ async function renderMainPrompts() {
   updatePromptCount(prompts.length, prompts.length);
 }
 
-// Render prompts in the sidebar
+// Render prompts in the sidebar safely using DOM nodes
 async function renderSidebarPrompts() {
   const prompts = await loadPrompts();
   const searchResults = document.getElementById('searchResults');
   if (searchResults) {
-    searchResults.innerHTML = prompts.map(({ app }) => `
-      <li class="search-result-item" onclick="scrollToPrompt('${app}')">${app}</li>
-    `).join('');
+    searchResults.innerHTML = '';
+    prompts.forEach(({ app, prompt }) => {
+      const li = document.createElement('li');
+      li.className = 'search-result-item';
+      li.textContent = app;
+      li.addEventListener('click', () => scrollToPrompt(app, prompt));
+      searchResults.appendChild(li);
+    });
   }
 }
 
@@ -180,44 +216,62 @@ function scrollToPrompt(title, prompt) {
   }
 }
 
-// Search functionality
+// Render search result items safely using DOM nodes to prevent escaping issues
+function displaySearchResults(filtered, totalPromptsCount, query) {
+  const searchResults = document.getElementById('searchResults');
+  if (!searchResults) return;
+
+  // Update prompt count
+  updatePromptCount(filtered.length, totalPromptsCount);
+
+  // Clear previous results
+  searchResults.innerHTML = '';
+
+  if (window.innerWidth <= 768 && !query.trim()) {
+    return; // Clear results on mobile if no search query
+  }
+
+  if (filtered.length === 0) {
+    const div = document.createElement('div');
+    div.className = 'search-result-item add-prompt';
+    div.innerHTML = `
+      <a href="https://github.com/f/awesome-chatgpt-prompts/pulls" target="_blank" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="16"></line>
+          <line x1="8" y1="12" x2="16" y2="12"></line>
+        </svg>
+        Add this prompt
+      </a>
+    `;
+    searchResults.appendChild(div);
+  } else {
+    filtered.forEach(({ app, prompt }) => {
+      const li = document.createElement('li');
+      li.className = 'search-result-item';
+      li.textContent = app;
+      li.addEventListener('click', () => scrollToPrompt(app, prompt));
+      searchResults.appendChild(li);
+    });
+  }
+}
+
+// Search functionality with debouncing and pre-normalized property search
 function setupSearch() {
   const searchInput = document.getElementById('searchInput');
-  const searchResults = document.getElementById('searchResults');
 
-  if (searchInput && searchResults) {
-    searchInput.addEventListener('input', async (e) => {
+  if (searchInput) {
+    const handleInput = debounce(async (e) => {
       const query = e.target.value.toLowerCase();
       const prompts = await loadPrompts();
-      const filtered = prompts.filter(({ app, prompt }) => 
-        app.toLowerCase().includes(query) || prompt.toLowerCase().includes(query)
+      const filtered = prompts.filter(({ appLower, promptLower }) =>
+        appLower.includes(query) || promptLower.includes(query)
       );
 
-      // Update prompt count
-      updatePromptCount(filtered.length, prompts.length);
+      displaySearchResults(filtered, prompts.length, query);
+    }, 150);
 
-      // Show filtered results
-      if (window.innerWidth <= 768 && !query.trim()) {
-        searchResults.innerHTML = ''; // Clear results on mobile if no search query
-      } else {
-        searchResults.innerHTML = filtered.length === 0 
-          ? `<div class="search-result-item add-prompt">
-              <a href="https://github.com/f/awesome-chatgpt-prompts/pulls" target="_blank" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 8px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="16"></line>
-                  <line x1="8" y1="12" x2="16" y2="12"></line>
-                </svg>
-                Add this prompt
-              </a>
-            </div>`
-          : filtered.map(({ app, prompt }) => `
-              <li class="search-result-item" onclick="scrollToPrompt('${app}', '${prompt}')">
-                ${app}
-              </li>
-            `).join('');
-      }
-    });
+    searchInput.addEventListener('input', handleInput);
   }
 }
 

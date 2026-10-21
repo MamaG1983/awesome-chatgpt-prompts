@@ -16,27 +16,30 @@ function toggleDarkMode() {
 // Add these new functions at the top
 function extractVariables(text) {
   const variables = [];
+  const seenNames = new Set();
   
-  // Extract ${var:default} format variables
+  // Extract ${var:default} format variables (O(1) deduplication via seenNames Set)
   const regex1 = /\${([^}]+)}/g;
   let match;
   while ((match = regex1.exec(text)) !== null) {
     const [variable, defaultValue] = match[1].split(":").map((s) => s.trim());
-    variables.push({ name: variable, default: defaultValue || "" });
+    if (!seenNames.has(variable)) {
+      seenNames.add(variable);
+      variables.push({ name: variable, default: defaultValue || "" });
+    }
   }
   
   // Extract {{var}} format variables
   const regex2 = /\{\{([^}]+)\}\}/g;
   while ((match = regex2.exec(text)) !== null) {
     const variable = match[1].trim();
-    if (!variables.some(v => v.name === variable)) {
+    if (!seenNames.has(variable)) {
+      seenNames.add(variable);
       variables.push({ name: variable, default: "" });
     }
   }
 
-  return [...new Set(variables.map((v) => JSON.stringify(v)))].map((v) =>
-    JSON.parse(v)
-  ); // Remove duplicates
+  return variables;
 }
 
 function createVariableInputs(variables, container) {

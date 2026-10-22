@@ -199,15 +199,42 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Singleton promise pattern for cached CSV fetching and parsing
+let promptsPromise = null;
+
+async function getPrompts() {
+  if (!promptsPromise) {
+    promptsPromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => {
+        const prompts = parseCSV(csvText);
+        // Pre-compute normalized properties once to avoid repeated string allocations
+        return prompts.map((p) => {
+          p.cleanTitle = (p.act || "")
+            .replace(/\s+/g, " ")
+            .replace(/[\n\r]/g, "")
+            .trim()
+            .toLowerCase();
+          p.actLower = (p.act || "").toLowerCase();
+          p.promptLower = (p.prompt || "").toLowerCase();
+          return p;
+        });
+      })
+      .catch((err) => {
+        promptsPromise = null;
+        throw err;
+      });
+  }
+  return promptsPromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
+    const prompts = await getPrompts();
 
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    // Sort prompts shallow copy alphabetically by act to avoid mutating shared array
+    const sortedPrompts = [...prompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -216,24 +243,24 @@ async function initializeSearch() {
 
     // Update prompt count
     const totalPrompts = isDevMode
-      ? prompts.filter((p) => p.for_devs === true).length
-      : prompts.length;
+      ? sortedPrompts.filter((p) => p.for_devs === true).length
+      : sortedPrompts.length;
     updatePromptCount(totalPrompts, totalPrompts);
 
     // Show filtered prompts initially
     const filteredPrompts = isDevMode
-      ? prompts.filter((p) => p.for_devs === true)
-      : prompts;
+      ? sortedPrompts.filter((p) => p.for_devs === true)
+      : sortedPrompts;
     displaySearchResults(filteredPrompts);
 
     searchInput.addEventListener("input", (e) => {
       const searchTerm = e.target.value.toLowerCase();
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
-      const filteredPrompts = prompts.filter((prompt) => {
+      const filteredPrompts = sortedPrompts.filter((prompt) => {
         const matchesSearch =
-          prompt.act.toLowerCase().includes(searchTerm) ||
-          prompt.prompt.toLowerCase().includes(searchTerm);
+          prompt.actLower.includes(searchTerm) ||
+          prompt.promptLower.includes(searchTerm);
 
         return isDevMode
           ? matchesSearch && prompt.for_devs === true
@@ -242,8 +269,8 @@ async function initializeSearch() {
 
       // Update count with filtered results
       const totalPrompts = isDevMode
-        ? prompts.filter((p) => p.for_devs === true).length
-        : prompts.length;
+        ? sortedPrompts.filter((p) => p.for_devs === true).length
+        : sortedPrompts.length;
       updatePromptCount(filteredPrompts.length, totalPrompts);
       displaySearchResults(filteredPrompts);
     });
@@ -420,63 +447,41 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const filteredPrompts = prompts.filter((prompt) => {
-        const matchesSearch =
-          !searchTerm ||
-          prompt.act.toLowerCase().includes(searchTerm) ||
-          prompt.prompt.toLowerCase().includes(searchTerm);
+  // Use cached prompts
+  getPrompts().then((prompts) => {
+    const filteredPrompts = prompts.filter((prompt) => {
+      const matchesSearch =
+        !searchTerm ||
+        prompt.actLower.includes(searchTerm) ||
+        prompt.promptLower.includes(searchTerm);
 
-        return isDevMode
-          ? matchesSearch && prompt.for_devs === true
-          : matchesSearch;
-      });
-
-      // Update count with filtered results
-      updatePromptCount(
-        filteredPrompts.length,
-        isDevMode
-          ? prompts.filter((p) => p.for_devs === true).length
-          : prompts.length
-      );
-      displaySearchResults(filteredPrompts);
-
-      // Update prompt cards visibility
-      const promptsGrid = document.querySelector(".prompts-grid");
-      if (promptsGrid) {
-        const cards = promptsGrid.querySelectorAll(
-          ".prompt-card:not(.contribute-card)"
-        );
-        cards.forEach((card) => {
-          const title = card.querySelector(".prompt-title").textContent.trim();
-          const matchingPrompt = prompts.find((p) => {
-            const pTitle = p.act
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            const cardTitle = title
-              .replace(/\s+/g, " ")
-              .replace(/[\n\r]/g, "")
-              .trim();
-            return (
-              pTitle.toLowerCase() === cardTitle.toLowerCase() ||
-              pTitle.toLowerCase().includes(cardTitle.toLowerCase()) ||
-              cardTitle.toLowerCase().includes(pTitle.toLowerCase())
-            );
-          });
-
-          // Show card if not in dev mode or if it's a dev prompt in dev mode
-          card.style.display =
-            !isDevMode || (matchingPrompt && matchingPrompt.for_devs === true)
-              ? ""
-              : "none";
-        });
-      }
+      return isDevMode
+        ? matchesSearch && prompt.for_devs === true
+        : matchesSearch;
     });
+
+    // Update count with filtered results
+    updatePromptCount(
+      filteredPrompts.length,
+      isDevMode
+        ? prompts.filter((p) => p.for_devs === true).length
+        : prompts.length
+    );
+    displaySearchResults(filteredPrompts);
+
+    // Update prompt cards visibility via data-for-devs attribute (O(N) direct check)
+    const promptsGrid = document.querySelector(".prompts-grid");
+    if (promptsGrid) {
+      const cards = promptsGrid.querySelectorAll(
+        ".prompt-card:not(.contribute-card)"
+      );
+      cards.forEach((card) => {
+        const isForDevs = card.dataset.forDevs === "true";
+        // Show card if not in dev mode or if it's a dev prompt in dev mode
+        card.style.display = !isDevMode || isForDevs ? "" : "none";
+      });
+    }
+  });
 }
 
 // Update the modal initialization and event listeners
@@ -506,76 +511,73 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
-      const isDevMode = document.getElementById("audienceSelect").value === "developers";
+  // Fetch prompts.csv using getPrompts() to get for_devs information
+  getPrompts().then((prompts) => {
+    const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
-      const promptElements = document.querySelectorAll(
-        "h2[id^=act] + p + blockquote"
-      );
+    const promptElements = document.querySelectorAll(
+      "h2[id^=act] + p + blockquote"
+    );
 
-      promptElements.forEach((blockquote) => {
-        const title =
-          blockquote.previousElementSibling.previousElementSibling.textContent.trim();
-        const content = blockquote.textContent.trim();
+    promptElements.forEach((blockquote) => {
+      const title =
+        blockquote.previousElementSibling.previousElementSibling.textContent.trim();
+      const content = blockquote.textContent.trim();
 
-        // Find matching prompt in CSV
-        const matchingPrompt = prompts.find((p) => {
-          const csvTitle = p.act
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          const elementTitle = title
-            .replace(/\s+/g, " ")
-            .replace(/[\n\r]/g, "")
-            .trim();
-          return (
-            csvTitle.toLowerCase() === elementTitle.toLowerCase() ||
-            csvTitle.toLowerCase().includes(elementTitle.toLowerCase()) ||
-            elementTitle.toLowerCase().includes(csvTitle.toLowerCase())
-          );
-        });
+      const elementTitleClean = title
+        .replace(/\s+/g, " ")
+        .replace(/[\n\r]/g, "")
+        .trim()
+        .toLowerCase();
 
-        // Extract contributor from the paragraph element
-        const contributorParagraph = blockquote.previousElementSibling;
-        const contributorText = contributorParagraph.textContent;
-        let contributor = null;
+      // Find matching prompt in CSV using pre-computed cleanTitle
+      const matchingPrompt = prompts.find((p) => {
+        return (
+          p.cleanTitle === elementTitleClean ||
+          p.cleanTitle.includes(elementTitleClean) ||
+          elementTitleClean.includes(p.cleanTitle)
+        );
+      });
 
-        // Try different contributor formats
-        const formats = [
-          /Contributed by: \[([^\]]+)\]/i,
-          /Contributed by \[([^\]]+)\]/i,
-          /Contributed by: @([^\s]+)/i,
-          /Contributed by @([^\s]+)/i,
-          /Contributed by: \[@([^\]]+)\]/i,
-          /Contributed by \[@([^\]]+)\]/i,
-        ];
+      // Extract contributor from the paragraph element
+      const contributorParagraph = blockquote.previousElementSibling;
+      const contributorText = contributorParagraph.textContent;
+      let contributor = null;
 
-        for (const format of formats) {
-          const match = contributorText.match(format);
-          if (match) {
-            contributor = match[1];
-            // Remove @ if it exists at the start
-            contributor = contributor.replace(/^@/, "");
-            break;
-          }
+      // Try different contributor formats
+      const formats = [
+        /Contributed by: \[([^\]]+)\]/i,
+        /Contributed by \[([^\]]+)\]/i,
+        /Contributed by: @([^\s]+)/i,
+        /Contributed by @([^\s]+)/i,
+        /Contributed by: \[@([^\]]+)\]/i,
+        /Contributed by \[@([^\]]+)\]/i,
+      ];
+
+      for (const format of formats) {
+        const match = contributorText.match(format);
+        if (match) {
+          contributor = match[1];
+          // Remove @ if it exists at the start
+          contributor = contributor.replace(/^@/, "");
+          break;
         }
+      }
 
-        // Set default contributor to 'f' if none found
-        if (!contributor) {
-          contributor = "f";
-        }
+      // Set default contributor to 'f' if none found
+      if (!contributor) {
+        contributor = "f";
+      }
 
-        const card = document.createElement("div");
-        card.className = "prompt-card";
+      const card = document.createElement("div");
+      card.className = "prompt-card";
+      const isForDevs = matchingPrompt ? matchingPrompt.for_devs === true : false;
+      card.dataset.forDevs = isForDevs ? "true" : "false";
 
-        // Set initial visibility based on dev mode
-        if (isDevMode && (!matchingPrompt || !matchingPrompt.for_devs)) {
-          card.style.display = "none";
-        }
+      // Set initial visibility based on dev mode
+      if (isDevMode && !isForDevs) {
+        card.style.display = "none";
+      }
 
         card.innerHTML = `
         <div class="prompt-title">

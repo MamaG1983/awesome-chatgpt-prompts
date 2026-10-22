@@ -1,0 +1,3 @@
+## 2026-10-22 - Single-Promise CSV Fetching & Dataset Card Attributes
+**Learning:** Re-fetching and re-parsing `prompts.csv` on audience switching and card creation introduced redundant network calls and main-thread parsing work. Furthermore, looping over prompts to find matches during DOM card filtering resulted in O(N*M) nested operations on every audience toggle.
+**Action:** Use a singleton promise pattern (`getPrompts()`) to cache the fetched and parsed CSV data while pre-computing normalized properties (`cleanTitle`, `actLower`, `promptLower`). Tag prompt cards with `data-for-devs` during creation to allow instant O(N) DOM dataset filtering on audience toggles.

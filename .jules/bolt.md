@@ -1,0 +1,3 @@
+## 2025-05-18 - Singleton Promise Caching and DOM Dataset Attributes for Prompts CSV
+**Learning:** Re-fetching and re-parsing `/prompts.csv` (~113KB) on every audience toggle or search action causes redundant HTTP requests and expensive main-thread parsing. Furthermore, re-running nested regex string normalization over DOM elements for matching cards on every filter interaction creates quadratic string creation overhead.
+**Action:** Use a singleton promise pattern (`getPrompts()`) with pre-computed lowercased/normalized search strings and tag DOM cards with `data-for-devs` attributes on initial creation. This converts repeated O(N * M) DOM updates on user interaction into O(N) attribute lookups without redundant CSV network requests or re-parsing.

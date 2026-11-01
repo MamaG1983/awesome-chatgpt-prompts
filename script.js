@@ -199,15 +199,29 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Singleton promise cache for prompts.csv
+let promptsCachePromise = null;
+
+// Fetch and cache parsed prompts.csv data (singleton promise pattern)
+function getPrompts() {
+  if (!promptsCachePromise) {
+    promptsCachePromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => parseCSV(csvText))
+      .catch((error) => {
+        promptsCachePromise = null;
+        throw error;
+      });
+  }
+  return promptsCachePromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
-
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    const rawPrompts = await getPrompts();
+    // Sort a shallow copy alphabetically by act to keep cache pristine
+    const prompts = [...rawPrompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -420,11 +434,9 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Use cached prompts
+  getPrompts()
+    .then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -507,10 +519,8 @@ function createPromptCards() {
   promptsGrid.appendChild(contributeCard);
 
   // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

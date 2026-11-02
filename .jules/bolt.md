@@ -1,0 +1,3 @@
+## 2026-11-02 - Singleton Promise Caching for Static CSV Assets
+**Learning:** Fetching and re-parsing static CSV dataset files (such as `prompts.csv` at ~115KB and `vibeprompts.csv` at ~29KB) multiple times on page load and during user interaction (e.g. audience changes or search keystrokes) creates redundant network requests and blocks the main thread with duplicate parsing loops.
+**Action:** Use a singleton promise pattern (`promptsPromise`) that caches both the in-flight fetch and the parsed results, allowing all consumers to share the loaded data while resetting on error to permit retries. Ensure that arrays returned from shared caches are cloned prior to in-place mutation or sorting (`[...prompts].sort(...)`).

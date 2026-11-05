@@ -199,15 +199,30 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeLanguageAndTone();
 });
 
+// Singleton promise cache to avoid redundant network requests and duplicate CSV parsing
+// across search initialization, card rendering, and audience filter updates.
+let promptsCachePromise = null;
+
+function getPrompts() {
+  if (!promptsCachePromise) {
+    promptsCachePromise = fetch("/prompts.csv")
+      .then((response) => response.text())
+      .then((csvText) => parseCSV(csvText))
+      .catch((error) => {
+        promptsCachePromise = null;
+        throw error;
+      });
+  }
+  return promptsCachePromise;
+}
+
 // Search functionality
 async function initializeSearch() {
   try {
-    const response = await fetch("/prompts.csv");
-    const csvText = await response.text();
-    const prompts = parseCSV(csvText);
+    const prompts = await getPrompts();
 
-    // Sort prompts alphabetically by act
-    prompts.sort((a, b) => a.act.localeCompare(b.act));
+    // Sort prompts alphabetically by act without mutating the shared cached array
+    const sortedPrompts = [...prompts].sort((a, b) => a.act.localeCompare(b.act));
 
     const searchInput = document.getElementById("searchInput");
     const searchResults = document.getElementById("searchResults");
@@ -220,17 +235,17 @@ async function initializeSearch() {
       : prompts.length;
     updatePromptCount(totalPrompts, totalPrompts);
 
-    // Show filtered prompts initially
+    // Show filtered prompts initially using the sorted array
     const filteredPrompts = isDevMode
-      ? prompts.filter((p) => p.for_devs === true)
-      : prompts;
+      ? sortedPrompts.filter((p) => p.for_devs === true)
+      : sortedPrompts;
     displaySearchResults(filteredPrompts);
 
     searchInput.addEventListener("input", (e) => {
       const searchTerm = e.target.value.toLowerCase();
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
-      const filteredPrompts = prompts.filter((prompt) => {
+      const filteredPrompts = sortedPrompts.filter((prompt) => {
         const matchesSearch =
           prompt.act.toLowerCase().includes(searchTerm) ||
           prompt.prompt.toLowerCase().includes(searchTerm);
@@ -420,11 +435,9 @@ function filterPrompts() {
   const searchInput = document.getElementById("searchInput");
   const searchTerm = searchInput.value.toLowerCase();
 
-  // Re-fetch and filter prompts
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Use cached prompts promise instead of re-fetching and re-parsing prompts.csv
+  getPrompts()
+    .then((prompts) => {
       const filteredPrompts = prompts.filter((prompt) => {
         const matchesSearch =
           !searchTerm ||
@@ -506,11 +519,9 @@ function createPromptCards() {
 `;
   promptsGrid.appendChild(contributeCard);
 
-  // Fetch prompts.csv to get for_devs information
-  fetch("/prompts.csv")
-    .then((response) => response.text())
-    .then((csvText) => {
-      const prompts = parseCSV(csvText);
+  // Use cached prompts promise to get for_devs information without redundant network fetch
+  getPrompts()
+    .then((prompts) => {
       const isDevMode = document.getElementById("audienceSelect").value === "developers";
 
       const promptElements = document.querySelectorAll(

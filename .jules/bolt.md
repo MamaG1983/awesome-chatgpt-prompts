@@ -1,0 +1,5 @@
+## 2025-05-18 - Singleton Promise Caching for CSV Datasets
+
+**Learning:** Both `script.js` and `vibe/script.js` fetched and parsed their respective CSV files (`prompts.csv` ~113KB, `vibeprompts.csv` ~29KB) repeatedly across multiple lifecycle events and user interactions (initial page setup, search inputs, audience selection changes). On `vibe/index.html`, every character typed in the search bar triggered an un-memoized `loadPrompts()`, resulting in continuous HTTP requests and synchronous regex CSV parsing on the main thread. Similarly, on the home page, initial load triggered duplicate fetches (`initializeSearch` and `createPromptCards`), and every audience dropdown toggle re-fetched and re-parsed `prompts.csv`.
+
+**Action:** Wrap the asynchronous fetch and CSV parse operations in singleton cached promises (`promptsCachePromise`, `vibePromptsCachePromise`) that reset only on error. When sorting or transforming cached datasets, always operate on shallow copies (e.g. `[...prompts].sort(...)`) to prevent accidental mutation of the cached array. This completely eliminates redundant network requests and CPU overhead while preserving exact UI functionality.
